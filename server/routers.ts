@@ -19,7 +19,8 @@ export const appRouter = router({
   gateway: router({
     config: publicProcedure.query(() => ({
       allowedOrigins: getAllowedOrigins(),
-      sessionTtlMinutes: 15,
+      idleTimeoutMinutes: 2,
+      maxSessionHours: 24,
       transport: "HTTPS + JWE",
     })),
     createSession: publicProcedure
@@ -40,7 +41,7 @@ export const appRouter = router({
           token,
           origin: parsed.origin,
           proxyUrl: `/gateway/${token}${parsed.pathname === "/" ? "/" : `${parsed.pathname}${parsed.search}`}`,
-          expiresAt: Date.now() + 15 * 60 * 1000,
+          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
         };
       }),
   }),

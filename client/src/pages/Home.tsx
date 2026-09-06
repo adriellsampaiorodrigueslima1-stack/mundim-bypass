@@ -181,7 +181,7 @@ function Home() {
             </div>
             <div className="input-meta"><span>Destino validado: <strong>{targetLabel}</strong></span><span><LockKeyhole size={12} /> {status === "error" ? "blocked" : "JWE session"}</span></div>
             {errorMessage && <div className="gateway-error" role="alert"><X size={13} /> {errorMessage}</div>}
-            {proxyUrl && status === "opened" && <div className="gateway-success"><Check size={13} /> Sessão HTTPS criada · URL opaca expira em 15 min</div>}
+            {proxyUrl && status === "opened" && <div className="gateway-success"><Check size={13} /> Sessão HTTPS ativa · acompanha a aba até você fechá-la</div>}
             <div className="suggestions">
               <span className="suggestion-label">ALLOWLIST ACCESS</span>
               {savedTargets.map((item) => <button key={item.name} className="suggestion" onClick={() => { setTarget(item.url); setStatus("ready"); setErrorMessage(""); }}><span>{item.name}</span><span>{item.tag}</span></button>)}
@@ -193,7 +193,7 @@ function Home() {
             <div className="config-row"><div><span className="config-label">EDGE NODE</span><strong>{selectedNode.name}</strong></div><button className="select-trigger" onClick={() => setShowNodes(!showNodes)} aria-expanded={showNodes}>{selectedNode.code}<ChevronDown size={15} /></button></div>
             {showNodes && <div className="node-menu">{nodes.map((node) => <button key={node.code} className={node.code === selectedNode.code ? "node-option selected" : "node-option"} onClick={() => { setSelectedNode(node); setShowNodes(false); }}><span><strong>{node.name}</strong><small>{node.code}</small></span><span>{node.latency}</span></button>)}</div>}
             <div className="config-row"><div><span className="config-label">SMART ROUTING</span><strong>Auto-select fastest</strong></div><button className={autoRoute ? "toggle on" : "toggle"} onClick={() => setAutoRoute(!autoRoute)} aria-label="Alternar roteamento automático"><span /></button></div>
-            <div className="config-row"><div><span className="config-label">SESSION SECURITY</span><strong>JWE · 15 min TTL</strong></div><span className="config-status"><Check size={13} /> active</span></div>
+            <div className="config-row"><div><span className="config-label">SESSION SECURITY</span><strong>JWE · activity lease</strong></div><span className="config-status"><Check size={13} /> active</span></div>
             <div className="config-footer"><span><Wifi size={13} /> {pulse}ms median</span><span className="sparkline"><i /><i /><i /><i /><i /><i /><i /></span></div>
           </aside>
         </div>
@@ -220,7 +220,7 @@ function Home() {
         <div className="principle"><Gauge size={19} /><div><strong>Performance-first</strong><span>Interface enxuta, pronta para resposta rápida.</span></div></div>
         <div className="principle"><Server size={19} /><div><strong>Edge-aware</strong><span>Escolha o nó mais próximo da sua sessão.</span></div></div>
         <div className="principle"><ShieldCheck size={19} /><div><strong>Authorized by design</strong><span>Somente destinos HTTPS permitidos.</span></div></div>
-        <div className="principle"><Activity size={19} /><div><strong>Encrypted sessions</strong><span>URL opaca com expiração automática.</span></div></div>
+        <div className="principle"><Activity size={19} /><div><strong>Live sessions</strong><span>Heartbeat enquanto a aba estiver aberta.</span></div></div>
       </section>
 
       <footer className="footer container"><span>© 2026 bypassschool</span><span className="footer-center"><span className="status-dot" /> all systems nominal</span><span>v0.2.0 / authorized gateway</span></footer>
