@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -57,17 +57,32 @@ function Home() {
   const [errorMessage, setErrorMessage] = useState("");
   const [proxyUrl, setProxyUrl] = useState("");
   const [pulse, setPulse] = useState(18);
+  const launchTimeoutRef = useRef<number | null>(null);
+
+  const clearLaunchTimeout = () => {
+    if (launchTimeoutRef.current !== null) {
+      window.clearTimeout(launchTimeoutRef.current);
+      launchTimeoutRef.current = null;
+    }
+  };
 
   const createSession = trpc.gateway.createSession.useMutation({
     onSuccess: (session) => {
+      clearLaunchTimeout();
       setProxyUrl(session.proxyUrl);
       setStatus("opened");
+      const absoluteProxyUrl = new URL(session.proxyUrl, window.location.origin).href;
       const tab = window.__bypassschoolPendingTab;
-      if (tab && !tab.closed) tab.location.href = session.proxyUrl;
-      else window.open(session.proxyUrl, "_blank", "noopener,noreferrer");
+      if (tab && !tab.closed) {
+        tab.location.href = absoluteProxyUrl;
+      } else {
+        const opened = window.open(absoluteProxyUrl, "_blank", "noopener,noreferrer");
+        if (!opened) window.location.assign(absoluteProxyUrl);
+      }
       window.__bypassschoolPendingTab = null;
     },
     onError: (error) => {
+      clearLaunchTimeout();
       setErrorMessage(error.message);
       setStatus("error");
       const tab = window.__bypassschoolPendingTab;
@@ -104,7 +119,17 @@ function Home() {
 
     setErrorMessage("");
     setStatus("checking");
-    window.__bypassschoolPendingTab = window.open("about:blank", "_blank", "noopener,noreferrer");
+    window.__bypassschoolPendingTab = window.open("about:blank", "_blank");
+    if (window.__bypassschoolPendingTab) window.__bypassschoolPendingTab.opener = null;
+    launchTimeoutRef.current = window.setTimeout(() => {
+      createSession.reset();
+      const tab = window.__bypassschoolPendingTab;
+      if (tab && !tab.closed) tab.close();
+      window.__bypassschoolPendingTab = null;
+      setStatus("error");
+      setErrorMessage("O gateway demorou para responder. Tente novamente.");
+      launchTimeoutRef.current = null;
+    }, 12000);
     createSession.mutate({ target });
   };
 
@@ -200,7 +225,7 @@ function Home() {
       </section>
 
       <section className="metrics-strip container" id="performance">
-        <Metric value="18ms" label="MEDIAN LATENCY" accent /><Metric value="99.98%" label="EDGE UPTIME" /><Metric value="15m" label="SESSION TTL" /><Metric value="HTTPS" label="TRANSPORT" />
+        <Metric value="18ms" label="MEDIAN LATENCY" accent /><Metric value="99.98%" label="EDGE UPTIME" /><Metric value="LIVE" label="SESSION MODE" /><Metric value="HTTPS" label="TRANSPORT" />
       </section>
 
       <section className="lower-grid container">
