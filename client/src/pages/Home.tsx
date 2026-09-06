@@ -197,7 +197,7 @@ function Home() {
             <p className="card-description">Insira qualquer endereço HTTPS público. O servidor valida a segurança do destino, cria uma sessão JWE temporária e abre o endereço através do gateway.</p>
             <div className="url-input-wrap">
               <Globe2 size={17} />
-              <input value={target} onChange={(event) => { setTarget(event.target.value); setStatus("ready"); setErrorMessage(""); }} placeholder="https://seu-jogo-web.com" aria-label="URL do jogo autorizado" />
+              <input value={target} onChange={(event) => { setTarget(event.target.value); setStatus("ready"); setErrorMessage(""); }} placeholder="youtube.com ou https://seu-site.com" aria-label="Endereço do site" />
               {target && <button className="clear-input" onClick={() => { setTarget(""); setProxyUrl(""); }} aria-label="Limpar URL"><X size={15} /></button>}
               <button className="launch-button" onClick={launchTarget} disabled={status === "checking"}>
                 {status === "checking" ? <RotateCcw className="spin" size={16} /> : status === "opened" ? <Check size={16} /> : <Play size={15} fill="currentColor" />}

@@ -55,9 +55,13 @@ export async function assertPublicHttpsTarget(target: URL) {
 }
 
 export async function parseAllowedTarget(rawTarget: string) {
+  const trimmed = rawTarget.trim();
+  const normalized = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed.replace(/^\/\//, "")}`;
   let target: URL;
   try {
-    target = new URL(rawTarget);
+    target = new URL(normalized);
   } catch {
     throw new Error("Informe uma URL válida.");
   }
@@ -133,9 +137,46 @@ function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
   });
 }
 
-function sessionHeartbeatScript(token: string) {
+function sessionHeartbeatScript(token: string, siteOrigin: string) {
   const safeToken = JSON.stringify(token);
-  return `<script data-bypassschool-session="heartbeat">(() => { const token = ${safeToken}; const NativeWebSocket = window.WebSocket; const GatewayWebSocket = function(url, protocols) { try { const parsed = new URL(String(url), document.baseURI); if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') { const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'; const proxied = protocol + '//' + location.host + '/gateway-ws/' + token + parsed.pathname + parsed.search; return protocols === undefined ? new NativeWebSocket(proxied) : new NativeWebSocket(proxied, protocols); } } catch {} return protocols === undefined ? new NativeWebSocket(url) : new NativeWebSocket(url, protocols); }; GatewayWebSocket.prototype = NativeWebSocket.prototype; window.WebSocket = GatewayWebSocket; const beat = () => fetch('/api/gateway/heartbeat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }), keepalive: true }).catch(() => {}); beat(); window.setInterval(beat, 30000); window.addEventListener('pagehide', () => { navigator.sendBeacon('/api/gateway/close', new Blob([JSON.stringify({ token })], { type: 'application/json' })); }); })();</script>`;
+  const safeSite = JSON.stringify(siteOrigin.replace(/^https?:\/\//, ""));
+  return `<script data-bypassschool-session="bridge">(() => {
+    const token = ${safeToken};
+    const site = ${safeSite};
+    const NativeWebSocket = window.WebSocket;
+    const GatewayWebSocket = function(url, protocols) {
+      try {
+        const parsed = new URL(String(url), document.baseURI);
+        if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
+          const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const proxied = protocol + '//' + location.host + '/gateway-ws/' + token + parsed.pathname + parsed.search;
+          return protocols === undefined ? new NativeWebSocket(proxied) : new NativeWebSocket(proxied, protocols);
+        }
+      } catch {}
+      return protocols === undefined ? new NativeWebSocket(url) : new NativeWebSocket(url, protocols);
+    };
+    GatewayWebSocket.prototype = NativeWebSocket.prototype;
+    window.WebSocket = GatewayWebSocket;
+
+    const style = document.createElement('style');
+    style.textContent = '@keyframes bsSpin { to { transform: rotate(360deg); } } @keyframes bsPulse { 0%,100% { opacity:.35; transform:scale(.94); } 50% { opacity:1; transform:scale(1); } } @keyframes bsIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } } #bypassschool-loader { position:fixed; inset:0; z-index:2147483646; display:grid; place-items:center; background:radial-gradient(circle at 50% 42%, #102642 0%, #050912 56%, #02040a 100%); color:#eaf7ff; font-family:system-ui,-apple-system,sans-serif; transition:opacity .42s ease, visibility .42s ease; } #bypassschool-loader.bs-ready { opacity:0; visibility:hidden; pointer-events:none; } .bs-loader-box { text-align:center; animation:bsIn .55s ease both; } .bs-loader-ring { width:58px; height:58px; margin:0 auto 20px; border:2px solid rgba(57,196,255,.2); border-top-color:#36c6ff; border-right-color:#8ef0ff; border-radius:50%; animation:bsSpin 1s linear infinite; box-shadow:0 0 26px rgba(35,184,255,.26); } .bs-loader-title { letter-spacing:.12em; text-transform:lowercase; font-size:14px; font-weight:600; } .bs-loader-sub { margin-top:9px; color:#80a3b9; font-size:11px; } #bypassschool-watermark { position:fixed; right:14px; bottom:14px; z-index:2147483645; display:flex; align-items:center; gap:7px; padding:7px 10px; border:1px solid rgba(74,191,239,.24); border-radius:7px; background:rgba(3,12,24,.76); box-shadow:0 6px 20px rgba(0,0,0,.2); color:#b9d8e9; font:10px ui-monospace,SFMono-Regular,monospace; backdrop-filter:blur(8px); pointer-events:none; animation:bsPulse 3.4s ease-in-out infinite; } .bs-watermark-name { color:#49c8ff; font-weight:700; } .bs-watermark-sep { color:#52798f; }';
+    document.head.appendChild(style);
+    const loader = document.createElement('div');
+    loader.id = 'bypassschool-loader';
+    loader.innerHTML = '<div class="bs-loader-box"><div class="bs-loader-ring"></div><div class="bs-loader-title">carregando, aguarde....</div><div class="bs-loader-sub">preparando uma sessão segura</div></div>';
+    document.documentElement.appendChild(loader);
+    const watermark = document.createElement('div');
+    watermark.id = 'bypassschool-watermark';
+    watermark.innerHTML = '<span class="bs-watermark-name">bypassschool</span><span class="bs-watermark-sep">·</span><span>' + site + '</span><span class="bs-watermark-sep">·</span><span id="bypassschool-ping">ping...</span>';
+    document.documentElement.appendChild(watermark);
+    const dismissLoader = () => { loader.classList.add('bs-ready'); window.setTimeout(() => loader.remove(), 500); };
+    if (document.readyState === 'complete') dismissLoader(); else window.addEventListener('load', dismissLoader, { once: true });
+    window.setTimeout(dismissLoader, 7000);
+    const beat = async () => { const started = performance.now(); try { await fetch('/api/gateway/heartbeat', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ token }), keepalive:true }); const ping = document.getElementById('bypassschool-ping'); if (ping) ping.textContent = Math.round(performance.now() - started) + 'ms'; } catch {} };
+    beat();
+    window.setInterval(beat, 30000);
+    window.addEventListener('pagehide', () => { navigator.sendBeacon('/api/gateway/close', new Blob([JSON.stringify({ token })], { type:'application/json' })); });
+  })();</script>`;
 }
 
 function getRequestPath(req: Request, claims: GatewayClaims) {
@@ -188,7 +229,7 @@ async function handleGatewayRequest(req: Request, res: Response) {
     if (contentType.includes("text/html") && upstream.body) {
       const html = rewriteHtml(await upstream.text(), upstreamUrl, token);
       res.removeHeader("content-length");
-      const sessionScript = sessionHeartbeatScript(token);
+      const sessionScript = sessionHeartbeatScript(token, claims.origin);
       return res.send(html.includes("</head>")
         ? html.replace(/<\/head>/i, `${sessionScript}</head>`)
         : html.includes("</body>")

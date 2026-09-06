@@ -15,6 +15,11 @@ describe("public HTTPS gateway", () => {
     expect(target.pathname).toBe("/game");
   });
 
+  it("normalizes a public target without a protocol", async () => {
+    const target = await parseAllowedTarget("example.com");
+    expect(target.href).toBe("https://example.com/");
+  });
+
   it("rejects non-HTTPS and private destinations", async () => {
     await expect(parseAllowedTarget("http://example.com/game")).rejects.toThrow("HTTPS");
     await expect(parseAllowedTarget("https://localhost:3000/")).rejects.toThrow("locais");
