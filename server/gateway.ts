@@ -120,7 +120,7 @@ export async function closeGatewaySession(token: string) {
   }
 }
 
-function proxyPath(token: string, target: URL) {
+function gatewayPath(token: string, target: URL) {
   const suffix = `${target.pathname || "/"}${target.search}`;
   return `/gateway/${token}${suffix === "/" ? "/" : suffix}`;
 }
@@ -132,7 +132,7 @@ function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
     try {
       const resolved = new URL(value, upstreamUrl);
       if (resolved.origin !== upstreamUrl.origin || resolved.protocol !== "https:") return full;
-      return `${attribute}=${quote}${proxyPath(token, resolved)}${quote}`;
+      return `${attribute}=${quote}${gatewayPath(token, resolved)}${quote}`;
     } catch {
       return full;
     }
@@ -221,7 +221,7 @@ async function handleGatewayRequest(req: Request, res: Response) {
       if (!location) return res.status(upstream.status).end();
       const redirectTarget = new URL(location, upstreamUrl);
       await assertPublicHttpsTarget(redirectTarget);
-      res.setHeader("location", proxyPath(token, redirectTarget));
+      res.setHeader("location", gatewayPath(token, redirectTarget));
       return res.status(upstream.status).end();
     }
 

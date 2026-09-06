@@ -55,7 +55,7 @@ function Home() {
   const [showNodes, setShowNodes] = useState(false);
   const [status, setStatus] = useState<"ready" | "checking" | "opened" | "error">("ready");
   const [errorMessage, setErrorMessage] = useState("");
-  const [proxyUrl, setProxyUrl] = useState("");
+  const [gatewayUrl, setGatewayUrl] = useState("");
   const [pulse, setPulse] = useState(18);
   const launchTimeoutRef = useRef<number | null>(null);
 
@@ -69,15 +69,15 @@ function Home() {
   const createSession = trpc.gateway.createSession.useMutation({
     onSuccess: (session) => {
       clearLaunchTimeout();
-      setProxyUrl(session.proxyUrl);
+      setGatewayUrl(session.gatewayUrl);
       setStatus("opened");
-      const absoluteProxyUrl = new URL(session.proxyUrl, window.location.origin).href;
+      const absoluteGatewayUrl = new URL(session.gatewayUrl, window.location.origin).href;
       const tab = window.__bypassschoolPendingTab;
       if (tab && !tab.closed) {
-        tab.location.href = absoluteProxyUrl;
+        tab.location.href = absoluteGatewayUrl;
       } else {
-        const opened = window.open(absoluteProxyUrl, "_blank", "noopener,noreferrer");
-        if (!opened) window.location.assign(absoluteProxyUrl);
+        const opened = window.open(absoluteGatewayUrl, "_blank", "noopener,noreferrer");
+        if (!opened) window.location.assign(absoluteGatewayUrl);
       }
       window.__bypassschoolPendingTab = null;
     },
@@ -198,7 +198,7 @@ function Home() {
             <div className="url-input-wrap">
               <Globe2 size={17} />
               <input value={target} onChange={(event) => { setTarget(event.target.value); setStatus("ready"); setErrorMessage(""); }} placeholder="youtube.com ou https://seu-site.com" aria-label="Endereço do site" />
-              {target && <button className="clear-input" onClick={() => { setTarget(""); setProxyUrl(""); }} aria-label="Limpar URL"><X size={15} /></button>}
+              {target && <button className="clear-input" onClick={() => { setTarget(""); setGatewayUrl(""); }} aria-label="Limpar URL"><X size={15} /></button>}
               <button className="launch-button" onClick={launchTarget} disabled={status === "checking"}>
                 {status === "checking" ? <RotateCcw className="spin" size={16} /> : status === "opened" ? <Check size={16} /> : <Play size={15} fill="currentColor" />}
                 <span>{buttonLabel}</span>
@@ -206,7 +206,7 @@ function Home() {
             </div>
             <div className="input-meta"><span>Destino validado: <strong>{targetLabel}</strong></span><span><LockKeyhole size={12} /> {status === "error" ? "blocked" : "JWE session"}</span></div>
             {errorMessage && <div className="gateway-error" role="alert"><X size={13} /> {errorMessage}</div>}
-            {proxyUrl && status === "opened" && <div className="gateway-success"><Check size={13} /> Sessão HTTPS ativa · acompanha a aba até você fechá-la</div>}
+            {gatewayUrl && status === "opened" && <div className="gateway-success"><Check size={13} /> Sessão HTTPS ativa · acompanha a aba até você fechá-la</div>}
             <div className="suggestions">
               <span className="suggestion-label">PUBLIC HTTPS ACCESS</span>
               {savedTargets.map((item) => <button key={item.name} className="suggestion" onClick={() => { setTarget(item.url); setStatus("ready"); setErrorMessage(""); }}><span>{item.name}</span><span>{item.tag}</span></button>)}

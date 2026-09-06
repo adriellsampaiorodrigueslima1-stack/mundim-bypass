@@ -40,7 +40,7 @@ export const appRouter = router({
         return {
           token,
           origin: parsed.origin,
-          proxyUrl: `/gateway/${token}${parsed.pathname === "/" ? "/" : `${parsed.pathname}${parsed.search}`}`,
+          gatewayUrl: `/gateway/${token}${parsed.pathname === "/" ? "/" : `${parsed.pathname}${parsed.search}`}`,
           expiresAt: Date.now() + 24 * 60 * 60 * 1000,
         };
       }),

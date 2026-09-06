@@ -82,14 +82,14 @@ export function registerArcadeApi(app: Express) {
       if (!rawTarget) return res.status(400).json({ ok: false, error: "Campo 'url' é obrigatório." });
       const target = await parseAllowedTarget(rawTarget);
       const token = await createGatewayToken(target);
-      const proxyPath = `/gateway/${token}${target.pathname === "/" ? "/" : `${target.pathname}${target.search}`}`;
+      const gatewayPath = `/gateway/${token}${target.pathname === "/" ? "/" : `${target.pathname}${target.search}`}`;
       const websocketPath = `/gateway-ws/${token}/`;
       return res.status(201).json({
         ok: true,
         session: {
           token,
           origin: target.origin,
-          proxyUrl: absoluteUrl(req, proxyPath),
+          gatewayUrl: absoluteUrl(req, gatewayPath),
           websocketUrl: absoluteUrl(req, websocketPath).replace(/^http/, "ws"),
           heartbeatUrl: absoluteUrl(req, "/api/v1/sessions/heartbeat"),
           closeUrl: absoluteUrl(req, "/api/v1/sessions/close"),

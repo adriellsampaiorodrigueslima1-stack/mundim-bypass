@@ -34,7 +34,7 @@ describe("arcade API v1", () => {
     expect(response.status).toBe(401);
   });
 
-  it("creates a session for the arcade and returns proxy URLs", async () => {
+  it("creates a session for the arcade and returns gateway URLs", async () => {
     const response = await fetch(`${baseUrl}/api/v1/sessions`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": "arcade-test-key", "x-forwarded-proto": "http" },
@@ -44,7 +44,7 @@ describe("arcade API v1", () => {
     expect(response.status).toBe(201);
     expect(body.ok).toBe(true);
     expect(body.session.token).toMatch(/^ey/);
-    expect(body.session.proxyUrl).toMatch(/^http:\/\/127\.0\.0\.1:/);
+    expect(body.session.gatewayUrl).toMatch(/^http:\/\/127\.0\.0\.1:/);
     expect(body.session.websocketUrl).toMatch(/^ws:\/\/127\.0\.0\.1:/);
     expect(body.session.heartbeatUrl).toContain("/api/v1/sessions/heartbeat");
   });
