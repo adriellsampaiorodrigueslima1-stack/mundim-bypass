@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerGatewayRoutes } from "../gateway";
 import { registerGatewayWebSockets } from "../websocketGateway";
+import { registerArcadeApi } from "../api";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
@@ -34,6 +35,7 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  registerArcadeApi(app);
   registerGatewayRoutes(app);
   app.use(
     "/api/trpc",
@@ -52,7 +54,7 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
-    console.log(`[Gateway] HTTPS allowlist active for ${process.env.GATEWAY_ALLOWED_ORIGINS || "default demo targets"}`);
+    console.log("[Gateway] Public HTTPS destinations active; private networks blocked");
   });
 }
 
