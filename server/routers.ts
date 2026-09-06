@@ -28,7 +28,7 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         let parsed: URL;
         try {
-          parsed = parseAllowedTarget(input.target);
+          parsed = await parseAllowedTarget(input.target);
         } catch (error) {
           throw new TRPCError({
             code: "BAD_REQUEST",

@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import dns from "node:dns/promises";
+import net from "node:net";
 import { Readable } from "node:stream";
 import type { Express, Request, Response } from "express";
 import { CompactEncrypt, compactDecrypt } from "jose";
@@ -7,11 +9,6 @@ import { ENV } from "./_core/env";
 const SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const SESSION_MAX_TTL_MS = 24 * 60 * 60 * 1000;
 const activeSessions = new Map<string, number>();
-const DEFAULT_ALLOWED_ORIGINS = [
-  "https://krunker.io",
-  "https://classic.minecraft.net",
-  "https://shellshock.io",
-];
 
 export type GatewayClaims = {
   sid: string;
@@ -20,34 +17,44 @@ export type GatewayClaims = {
   exp: number;
 };
 
-function allowedOrigins() {
-  const configured = process.env.GATEWAY_ALLOWED_ORIGINS
-    ?.split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  return (configured?.length ? configured : DEFAULT_ALLOWED_ORIGINS).flatMap((value) => {
-    try {
-      const parsed = new URL(value);
-      return parsed.protocol === "https:" && parsed.pathname === "/" && !parsed.search
-        ? [parsed.origin]
-        : [];
-    } catch {
-      return [];
-    }
-  });
-}
-
 export function getAllowedOrigins() {
-  return allowedOrigins();
+  return ["https://* (qualquer destino público) "];
 }
 
-function encryptionKey() {
-  const secret = ENV.cookieSecret || "bypassschool-local-development-only-key";
-  return createHash("sha256").update(secret).digest();
+function isBlockedAddress(address: string) {
+  if (net.isIPv4(address)) {
+    const [a, b] = address.split(".").map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19));
+  }
+
+  if (net.isIPv6(address)) {
+    const normalized = address.toLowerCase();
+    return normalized === "::" || normalized === "::1" || normalized.startsWith("fc") ||
+      normalized.startsWith("fd") || normalized.startsWith("fe8") || normalized.startsWith("fe9") ||
+      normalized.startsWith("fea") || normalized.startsWith("feb");
+  }
+
+  return true;
 }
 
-export function parseAllowedTarget(rawTarget: string) {
+export async function assertPublicHttpsTarget(target: URL) {
+  if (target.protocol !== "https:") throw new Error("O gateway aceita somente destinos HTTPS.");
+  if (target.username || target.password) throw new Error("URLs com credenciais não são permitidas.");
+  if (target.hostname === "localhost" || target.hostname.endsWith(".local") || target.hostname.endsWith(".internal")) {
+    throw new Error("Destinos locais ou internos não são permitidos.");
+  }
+
+  const addresses = net.isIP(target.hostname)
+    ? [target.hostname]
+    : (await dns.lookup(target.hostname, { all: true, verbatim: true })).map(({ address }) => address);
+  if (!addresses.length || addresses.some(isBlockedAddress)) {
+    throw new Error("O destino precisa resolver para um endereço público.");
+  }
+}
+
+export async function parseAllowedTarget(rawTarget: string) {
   let target: URL;
   try {
     target = new URL(rawTarget);
@@ -55,15 +62,13 @@ export function parseAllowedTarget(rawTarget: string) {
     throw new Error("Informe uma URL válida.");
   }
 
-  if (target.protocol !== "https:") {
-    throw new Error("O gateway aceita somente destinos HTTPS.");
-  }
-
-  if (!getAllowedOrigins().includes(target.origin)) {
-    throw new Error("Este destino ainda não está na allowlist autorizada.");
-  }
-
+  await assertPublicHttpsTarget(target);
   return target;
+}
+
+function encryptionKey() {
+  const secret = ENV.cookieSecret || "bypassschool-local-development-only-key";
+  return createHash("sha256").update(secret).digest();
 }
 
 export async function createGatewayToken(target: URL) {
@@ -75,7 +80,6 @@ export async function createGatewayToken(target: URL) {
   };
 
   activeSessions.set(claims.sid, Date.now() + SESSION_IDLE_TIMEOUT_MS);
-
   return new CompactEncrypt(new TextEncoder().encode(JSON.stringify(claims)))
     .setProtectedHeader({ alg: "dir", enc: "A256GCM", typ: "BYPASS-GATEWAY" })
     .encrypt(encryptionKey());
@@ -86,17 +90,9 @@ export async function readGatewayToken(token: string): Promise<GatewayClaims> {
   const claims = JSON.parse(new TextDecoder().decode(plaintext)) as GatewayClaims;
   const idleUntil = activeSessions.get(claims.sid);
 
-  if (
-    !claims ||
-    typeof claims.sid !== "string" ||
-    typeof claims.origin !== "string" ||
-    typeof claims.initialPath !== "string" ||
-    typeof claims.exp !== "number" ||
-    claims.exp < Date.now() ||
-    typeof idleUntil !== "number" ||
-    idleUntil < Date.now() ||
-    !getAllowedOrigins().includes(claims.origin)
-  ) {
+  if (!claims || typeof claims.sid !== "string" || typeof claims.origin !== "string" ||
+      typeof claims.initialPath !== "string" || typeof claims.exp !== "number" ||
+      claims.exp < Date.now() || typeof idleUntil !== "number" || idleUntil < Date.now()) {
     throw new Error("Sessão fechada, ociosa ou inválida.");
   }
 
@@ -125,10 +121,8 @@ function proxyPath(token: string, target: URL) {
 
 function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
   const attributePattern = /(src|href|action|poster)=("|')([^"']+)(\2)/gi;
-
   return html.replace(attributePattern, (full, attribute: string, quote: string, value: string) => {
     if (/^(#|data:|mailto:|javascript:|blob:|about:)/i.test(value)) return full;
-
     try {
       const resolved = new URL(value, upstreamUrl);
       if (resolved.origin !== upstreamUrl.origin || resolved.protocol !== "https:") return full;
@@ -153,29 +147,20 @@ function getRequestPath(req: Request, claims: GatewayClaims) {
 }
 
 function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
-  const contentType = upstream.headers.get("content-type");
-  const cacheControl = upstream.headers.get("cache-control");
-  const etag = upstream.headers.get("etag");
-  const lastModified = upstream.headers.get("last-modified");
-
-  if (contentType) res.setHeader("content-type", contentType);
-  if (cacheControl) res.setHeader("cache-control", cacheControl);
-  if (etag) res.setHeader("etag", etag);
-  if (lastModified) res.setHeader("last-modified", lastModified);
-  res.setHeader("x-bypassschool-gateway", "allowlisted-jwe-session");
+  for (const name of ["content-type", "cache-control", "etag", "last-modified"]) {
+    const value = upstream.headers.get(name);
+    if (value) res.setHeader(name, value);
+  }
+  res.setHeader("x-bypassschool-gateway", "public-https-session");
   res.setHeader("x-content-type-options", "nosniff");
 }
 
 async function handleGatewayRequest(req: Request, res: Response) {
   const token = req.params.token;
-
   try {
     const claims = await readGatewayToken(token);
     const upstreamUrl = new URL(getRequestPath(req, claims), claims.origin);
-    if (upstreamUrl.origin !== claims.origin || upstreamUrl.protocol !== "https:") {
-      res.status(403).type("text").send("Destino bloqueado pela allowlist.");
-      return;
-    }
+    await assertPublicHttpsTarget(upstreamUrl);
 
     const upstream = await fetch(upstreamUrl, {
       method: req.method === "HEAD" ? "HEAD" : "GET",
@@ -184,45 +169,30 @@ async function handleGatewayRequest(req: Request, res: Response) {
       headers: {
         accept: req.headers.accept || "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "accept-language": req.headers["accept-language"] || "pt-BR,pt;q=0.9,en;q=0.8",
-        "user-agent": "bypassschool-authorized-gateway/0.2",
+        "user-agent": "bypassschool-authorized-gateway/0.3",
       },
     });
 
     if (upstream.status >= 300 && upstream.status < 400) {
       const location = upstream.headers.get("location");
-      if (!location) {
-        res.status(upstream.status).end();
-        return;
-      }
+      if (!location) return res.status(upstream.status).end();
       const redirectTarget = new URL(location, upstreamUrl);
-      if (redirectTarget.origin !== claims.origin || redirectTarget.protocol !== "https:") {
-        res.status(403).type("text").send("Redirecionamento bloqueado pela allowlist.");
-        return;
-      }
+      await assertPublicHttpsTarget(redirectTarget);
       res.setHeader("location", proxyPath(token, redirectTarget));
-      res.status(upstream.status).end();
-      return;
+      return res.status(upstream.status).end();
     }
 
     copyResponseHeaders(upstream, res);
     res.status(upstream.status);
-
     const contentType = upstream.headers.get("content-type") || "";
     if (contentType.includes("text/html") && upstream.body) {
-      const html = await upstream.text();
-      const rewritten = rewriteHtml(html, upstreamUrl, token);
+      const html = rewriteHtml(await upstream.text(), upstreamUrl, token);
       res.removeHeader("content-length");
-      res.send(rewritten.includes("</body>")
-        ? rewritten.replace(/<\/body>/i, `${sessionHeartbeatScript(token)}</body>`)
-        : `${rewritten}${sessionHeartbeatScript(token)}`);
-      return;
+      return res.send(html.includes("</body>")
+        ? html.replace(/<\/body>/i, `${sessionHeartbeatScript(token)}</body>`)
+        : `${html}${sessionHeartbeatScript(token)}`);
     }
-
-    if (!upstream.body) {
-      res.end();
-      return;
-    }
-
+    if (!upstream.body) return res.end();
     Readable.fromWeb(upstream.body as any).pipe(res);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha ao abrir a sessão.";
@@ -240,12 +210,10 @@ export function registerGatewayRoutes(app: Express) {
       res.status(401).json({ error: "Sessão fechada ou expirada." });
     }
   });
-
   app.post("/api/gateway/close", async (req, res) => {
     await closeGatewaySession(String(req.body?.token || ""));
     res.status(204).end();
   });
-
   app.get("/gateway/:token", handleGatewayRequest);
   app.get("/gateway/:token/*", handleGatewayRequest);
 }

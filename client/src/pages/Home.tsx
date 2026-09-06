@@ -170,7 +170,7 @@ function Home() {
         <div className="hero-copy">
           <div className="eyebrow"><span className="eyebrow-line" /> AUTHORIZED WEB GATEWAY <Sparkles size={14} /></div>
           <h1>Play the web.<br /><em>On your terms.</em></h1>
-          <p className="hero-description">Um gateway ultrarrápido para experiências web autorizadas. Sessões HTTPS temporárias, menos atrito e conexão pronta para jogar.</p>
+          <p className="hero-description">Um gateway ultrarrápido para qualquer site HTTPS público. Sessões temporárias, menos atrito e conexão pronta para explorar a web.</p>
           <div className="hero-cta-row">
             <a className="text-cta" href="#launcher">Abrir launcher <ArrowUpRight size={16} /></a>
             <span className="micro-note"><ShieldCheck size={14} /> HTTPS + JWE</span>
@@ -194,7 +194,7 @@ function Home() {
               <div className="card-title"><span className="title-icon"><Gamepad2 size={18} /></span><div><span className="card-overline">SECURE SESSION STARTER</span><h2>Launch a game</h2></div></div>
               <div className="live-badge"><Radio size={12} /> LIVE</div>
             </div>
-            <p className="card-description">Insira o endereço de um jogo autorizado. O servidor valida a allowlist, cria uma sessão JWE temporária e abre o destino através do gateway.</p>
+            <p className="card-description">Insira qualquer endereço HTTPS público. O servidor valida a segurança do destino, cria uma sessão JWE temporária e abre o endereço através do gateway.</p>
             <div className="url-input-wrap">
               <Globe2 size={17} />
               <input value={target} onChange={(event) => { setTarget(event.target.value); setStatus("ready"); setErrorMessage(""); }} placeholder="https://seu-jogo-web.com" aria-label="URL do jogo autorizado" />
@@ -208,7 +208,7 @@ function Home() {
             {errorMessage && <div className="gateway-error" role="alert"><X size={13} /> {errorMessage}</div>}
             {proxyUrl && status === "opened" && <div className="gateway-success"><Check size={13} /> Sessão HTTPS ativa · acompanha a aba até você fechá-la</div>}
             <div className="suggestions">
-              <span className="suggestion-label">ALLOWLIST ACCESS</span>
+              <span className="suggestion-label">PUBLIC HTTPS ACCESS</span>
               {savedTargets.map((item) => <button key={item.name} className="suggestion" onClick={() => { setTarget(item.url); setStatus("ready"); setErrorMessage(""); }}><span>{item.name}</span><span>{item.tag}</span></button>)}
             </div>
           </div>
@@ -244,7 +244,7 @@ function Home() {
       <section className="principles container" id="docs">
         <div className="principle"><Gauge size={19} /><div><strong>Performance-first</strong><span>Interface enxuta, pronta para resposta rápida.</span></div></div>
         <div className="principle"><Server size={19} /><div><strong>Edge-aware</strong><span>Escolha o nó mais próximo da sua sessão.</span></div></div>
-        <div className="principle"><ShieldCheck size={19} /><div><strong>Authorized by design</strong><span>Somente destinos HTTPS permitidos.</span></div></div>
+        <div className="principle"><ShieldCheck size={19} /><div><strong>Public-only by design</strong><span>HTTPS público, sem acesso à rede interna.</span></div></div>
         <div className="principle"><Activity size={19} /><div><strong>Live sessions</strong><span>Heartbeat enquanto a aba estiver aberta.</span></div></div>
       </section>
 
