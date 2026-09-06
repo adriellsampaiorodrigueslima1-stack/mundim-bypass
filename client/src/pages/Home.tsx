@@ -6,7 +6,6 @@ import {
   ChevronDown,
   CircleHelp,
   Command,
-  ExternalLink,
   Gamepad2,
   Gauge,
   Globe2,
@@ -25,6 +24,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { trpc } from "@/lib/trpc";
 
 const savedTargets = [
   { name: "Krunker", url: "https://krunker.io", tag: "FPS" },
@@ -53,8 +53,28 @@ function Home() {
   const [autoRoute, setAutoRoute] = useState(true);
   const [showMobileNav, setShowMobileNav] = useState(false);
   const [showNodes, setShowNodes] = useState(false);
-  const [status, setStatus] = useState<"ready" | "checking" | "opened">("ready");
+  const [status, setStatus] = useState<"ready" | "checking" | "opened" | "error">("ready");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [proxyUrl, setProxyUrl] = useState("");
   const [pulse, setPulse] = useState(18);
+
+  const createSession = trpc.gateway.createSession.useMutation({
+    onSuccess: (session) => {
+      setProxyUrl(session.proxyUrl);
+      setStatus("opened");
+      const tab = window.__bypassschoolPendingTab;
+      if (tab && !tab.closed) tab.location.href = session.proxyUrl;
+      else window.open(session.proxyUrl, "_blank", "noopener,noreferrer");
+      window.__bypassschoolPendingTab = null;
+    },
+    onError: (error) => {
+      setErrorMessage(error.message);
+      setStatus("error");
+      const tab = window.__bypassschoolPendingTab;
+      if (tab && !tab.closed) tab.close();
+      window.__bypassschoolPendingTab = null;
+    },
+  });
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -71,25 +91,29 @@ function Home() {
     try {
       return new URL(target.startsWith("http") ? target : `https://${target}`).hostname;
     } catch {
-      return "URL personalizada";
+      return "URL inválida";
     }
   }, [target]);
 
   const launchTarget = () => {
     if (!target.trim()) {
-      setStatus("checking");
-      window.setTimeout(() => setStatus("ready"), 900);
+      setErrorMessage("Informe um destino HTTPS que esteja na allowlist.");
+      setStatus("error");
       return;
     }
-    const normalized = target.startsWith("http") ? target : `https://${target}`;
-    setStatus("opened");
-    window.setTimeout(() => window.open(normalized, "_blank", "noopener,noreferrer"), 240);
+
+    setErrorMessage("");
+    setStatus("checking");
+    window.__bypassschoolPendingTab = window.open("about:blank", "_blank", "noopener,noreferrer");
+    createSession.mutate({ target });
   };
 
   const runLatencyCheck = () => {
     setStatus("checking");
     window.setTimeout(() => setStatus("ready"), 900);
   };
+
+  const buttonLabel = status === "checking" ? "Criando sessão" : status === "opened" ? "Sessão aberta" : "Launch";
 
   return (
     <main className="app-shell">
@@ -119,12 +143,12 @@ function Home() {
 
       <section className="hero container" id="top">
         <div className="hero-copy">
-          <div className="eyebrow"><span className="eyebrow-line" /> LOW-LATENCY WEB GATEWAY <Sparkles size={14} /></div>
+          <div className="eyebrow"><span className="eyebrow-line" /> AUTHORIZED WEB GATEWAY <Sparkles size={14} /></div>
           <h1>Play the web.<br /><em>On your terms.</em></h1>
-          <p className="hero-description">Um launcher ultrarrápido para experiências web interativas. Menos atrito, mais controle e uma conexão pronta para jogar.</p>
+          <p className="hero-description">Um gateway ultrarrápido para experiências web autorizadas. Sessões HTTPS temporárias, menos atrito e conexão pronta para jogar.</p>
           <div className="hero-cta-row">
             <a className="text-cta" href="#launcher">Abrir launcher <ArrowUpRight size={16} /></a>
-            <span className="micro-note"><ShieldCheck size={14} /> Sem instalação</span>
+            <span className="micro-note"><ShieldCheck size={14} /> HTTPS + JWE</span>
           </div>
         </div>
 
@@ -142,23 +166,25 @@ function Home() {
         <div className="launcher-grid">
           <div className="launch-card glass-card">
             <div className="card-topline">
-              <div className="card-title"><span className="title-icon"><Gamepad2 size={18} /></span><div><span className="card-overline">SESSION STARTER</span><h2>Launch a game</h2></div></div>
+              <div className="card-title"><span className="title-icon"><Gamepad2 size={18} /></span><div><span className="card-overline">SECURE SESSION STARTER</span><h2>Launch a game</h2></div></div>
               <div className="live-badge"><Radio size={12} /> LIVE</div>
             </div>
-            <p className="card-description">Insira o endereço de um jogo web autorizado e abra uma sessão otimizada no seu navegador.</p>
+            <p className="card-description">Insira o endereço de um jogo autorizado. O servidor valida a allowlist, cria uma sessão JWE temporária e abre o destino através do gateway.</p>
             <div className="url-input-wrap">
               <Globe2 size={17} />
-              <input value={target} onChange={(event) => { setTarget(event.target.value); setStatus("ready"); }} placeholder="https://seu-jogo-web.com" aria-label="URL do jogo" />
-              {target && <button className="clear-input" onClick={() => setTarget("")} aria-label="Limpar URL"><X size={15} /></button>}
+              <input value={target} onChange={(event) => { setTarget(event.target.value); setStatus("ready"); setErrorMessage(""); }} placeholder="https://seu-jogo-web.com" aria-label="URL do jogo autorizado" />
+              {target && <button className="clear-input" onClick={() => { setTarget(""); setProxyUrl(""); }} aria-label="Limpar URL"><X size={15} /></button>}
               <button className="launch-button" onClick={launchTarget} disabled={status === "checking"}>
                 {status === "checking" ? <RotateCcw className="spin" size={16} /> : status === "opened" ? <Check size={16} /> : <Play size={15} fill="currentColor" />}
-                <span>{status === "checking" ? "Verificando" : status === "opened" ? "Aberto" : "Launch"}</span>
+                <span>{buttonLabel}</span>
               </button>
             </div>
-            <div className="input-meta"><span>Destino detectado: <strong>{targetLabel}</strong></span><span><LockKeyhole size={12} /> browser-only</span></div>
+            <div className="input-meta"><span>Destino validado: <strong>{targetLabel}</strong></span><span><LockKeyhole size={12} /> {status === "error" ? "blocked" : "JWE session"}</span></div>
+            {errorMessage && <div className="gateway-error" role="alert"><X size={13} /> {errorMessage}</div>}
+            {proxyUrl && status === "opened" && <div className="gateway-success"><Check size={13} /> Sessão HTTPS criada · URL opaca expira em 15 min</div>}
             <div className="suggestions">
-              <span className="suggestion-label">QUICK ACCESS</span>
-              {savedTargets.map((item) => <button key={item.name} className="suggestion" onClick={() => setTarget(item.url)}><span>{item.name}</span><span>{item.tag}</span></button>)}
+              <span className="suggestion-label">ALLOWLIST ACCESS</span>
+              {savedTargets.map((item) => <button key={item.name} className="suggestion" onClick={() => { setTarget(item.url); setStatus("ready"); setErrorMessage(""); }}><span>{item.name}</span><span>{item.tag}</span></button>)}
             </div>
           </div>
 
@@ -167,14 +193,14 @@ function Home() {
             <div className="config-row"><div><span className="config-label">EDGE NODE</span><strong>{selectedNode.name}</strong></div><button className="select-trigger" onClick={() => setShowNodes(!showNodes)} aria-expanded={showNodes}>{selectedNode.code}<ChevronDown size={15} /></button></div>
             {showNodes && <div className="node-menu">{nodes.map((node) => <button key={node.code} className={node.code === selectedNode.code ? "node-option selected" : "node-option"} onClick={() => { setSelectedNode(node); setShowNodes(false); }}><span><strong>{node.name}</strong><small>{node.code}</small></span><span>{node.latency}</span></button>)}</div>}
             <div className="config-row"><div><span className="config-label">SMART ROUTING</span><strong>Auto-select fastest</strong></div><button className={autoRoute ? "toggle on" : "toggle"} onClick={() => setAutoRoute(!autoRoute)} aria-label="Alternar roteamento automático"><span /></button></div>
-            <div className="config-row"><div><span className="config-label">CACHE MODE</span><strong>Game assets · aggressive</strong></div><span className="config-status"><Check size={13} /> active</span></div>
+            <div className="config-row"><div><span className="config-label">SESSION SECURITY</span><strong>JWE · 15 min TTL</strong></div><span className="config-status"><Check size={13} /> active</span></div>
             <div className="config-footer"><span><Wifi size={13} /> {pulse}ms median</span><span className="sparkline"><i /><i /><i /><i /><i /><i /><i /></span></div>
           </aside>
         </div>
       </section>
 
       <section className="metrics-strip container" id="performance">
-        <Metric value="18ms" label="MEDIAN LATENCY" accent /><Metric value="99.98%" label="EDGE UPTIME" /><Metric value="3.4×" label="FASTER START" /><Metric value="24/7" label="NETWORK WATCH" />
+        <Metric value="18ms" label="MEDIAN LATENCY" accent /><Metric value="99.98%" label="EDGE UPTIME" /><Metric value="15m" label="SESSION TTL" /><Metric value="HTTPS" label="TRANSPORT" />
       </section>
 
       <section className="lower-grid container">
@@ -193,13 +219,19 @@ function Home() {
       <section className="principles container" id="docs">
         <div className="principle"><Gauge size={19} /><div><strong>Performance-first</strong><span>Interface enxuta, pronta para resposta rápida.</span></div></div>
         <div className="principle"><Server size={19} /><div><strong>Edge-aware</strong><span>Escolha o nó mais próximo da sua sessão.</span></div></div>
-        <div className="principle"><ShieldCheck size={19} /><div><strong>Responsible by design</strong><span>Use apenas com destinos autorizados.</span></div></div>
-        <div className="principle"><Activity size={19} /><div><strong>Observable</strong><span>Métricas claras, sem promessas mágicas.</span></div></div>
+        <div className="principle"><ShieldCheck size={19} /><div><strong>Authorized by design</strong><span>Somente destinos HTTPS permitidos.</span></div></div>
+        <div className="principle"><Activity size={19} /><div><strong>Encrypted sessions</strong><span>URL opaca com expiração automática.</span></div></div>
       </section>
 
-      <footer className="footer container"><span>© 2026 bypassschool</span><span className="footer-center"><span className="status-dot" /> all systems nominal</span><span>v0.1.0 / preview build</span></footer>
+      <footer className="footer container"><span>© 2026 bypassschool</span><span className="footer-center"><span className="status-dot" /> all systems nominal</span><span>v0.2.0 / authorized gateway</span></footer>
     </main>
   );
 }
 
 export default Home;
+
+declare global {
+  interface Window {
+    __bypassschoolPendingTab: Window | null;
+  }
+}
