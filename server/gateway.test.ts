@@ -44,7 +44,9 @@ describe("public HTTPS gateway", () => {
   it("rejects a tampered token", async () => {
     const token = await createGatewayToken(await parseAllowedTarget("https://example.com/"));
     const parts = token.split(".");
-    parts[3] = `${parts[3].slice(0, -1)}${parts[3].endsWith("a") ? "b" : "a"}`;
+    const tamperIndex = Math.floor(parts[3].length / 2);
+    const tamperChar = parts[3][tamperIndex] === "a" ? "b" : "a";
+    parts[3] = `${parts[3].slice(0, tamperIndex)}${tamperChar}${parts[3].slice(tamperIndex + 1)}`;
     const tampered = parts.join(".");
     await expect(readGatewayToken(tampered)).rejects.toThrow();
   });

@@ -135,7 +135,7 @@ function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
 
 function sessionHeartbeatScript(token: string) {
   const safeToken = JSON.stringify(token);
-  return `<script data-bypassschool-session="heartbeat">(() => { const token = ${safeToken}; const beat = () => fetch('/api/gateway/heartbeat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }), keepalive: true }).catch(() => {}); beat(); window.setInterval(beat, 30000); window.addEventListener('pagehide', () => { navigator.sendBeacon('/api/gateway/close', new Blob([JSON.stringify({ token })], { type: 'application/json' })); }); })();</script>`;
+  return `<script data-bypassschool-session="heartbeat">(() => { const token = ${safeToken}; const NativeWebSocket = window.WebSocket; const GatewayWebSocket = function(url, protocols) { try { const parsed = new URL(String(url), document.baseURI); if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') { const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'; const proxied = protocol + '//' + location.host + '/gateway-ws/' + token + parsed.pathname + parsed.search; return protocols === undefined ? new NativeWebSocket(proxied) : new NativeWebSocket(proxied, protocols); } } catch {} return protocols === undefined ? new NativeWebSocket(url) : new NativeWebSocket(url, protocols); }; GatewayWebSocket.prototype = NativeWebSocket.prototype; window.WebSocket = GatewayWebSocket; const beat = () => fetch('/api/gateway/heartbeat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }), keepalive: true }).catch(() => {}); beat(); window.setInterval(beat, 30000); window.addEventListener('pagehide', () => { navigator.sendBeacon('/api/gateway/close', new Blob([JSON.stringify({ token })], { type: 'application/json' })); }); })();</script>`;
 }
 
 function getRequestPath(req: Request, claims: GatewayClaims) {
@@ -188,9 +188,12 @@ async function handleGatewayRequest(req: Request, res: Response) {
     if (contentType.includes("text/html") && upstream.body) {
       const html = rewriteHtml(await upstream.text(), upstreamUrl, token);
       res.removeHeader("content-length");
-      return res.send(html.includes("</body>")
-        ? html.replace(/<\/body>/i, `${sessionHeartbeatScript(token)}</body>`)
-        : `${html}${sessionHeartbeatScript(token)}`);
+      const sessionScript = sessionHeartbeatScript(token);
+      return res.send(html.includes("</head>")
+        ? html.replace(/<\/head>/i, `${sessionScript}</head>`)
+        : html.includes("</body>")
+          ? html.replace(/<\/body>/i, `${sessionScript}</body>`)
+          : `${html}${sessionScript}`);
     }
     if (!upstream.body) return res.end();
     Readable.fromWeb(upstream.body as any).pipe(res);

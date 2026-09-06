@@ -245,7 +245,7 @@ function Home() {
         <div className="principle"><Gauge size={19} /><div><strong>Performance-first</strong><span>Interface enxuta, pronta para resposta rápida.</span></div></div>
         <div className="principle"><Server size={19} /><div><strong>Edge-aware</strong><span>Escolha o nó mais próximo da sua sessão.</span></div></div>
         <div className="principle"><ShieldCheck size={19} /><div><strong>Public-only by design</strong><span>HTTPS público, sem acesso à rede interna.</span></div></div>
-        <div className="principle"><Activity size={19} /><div><strong>Live sessions</strong><span>Heartbeat enquanto a aba estiver aberta.</span></div></div>
+        <div className="principle"><Activity size={19} /><div><strong>Realtime tunnel</strong><span>WebSocket bidirecional para jogos online.</span></div></div>
       </section>
 
       <footer className="footer container"><span>© 2026 bypassschool</span><span className="footer-center"><span className="status-dot" /> all systems nominal</span><span>v0.2.0 / authorized gateway</span></footer>
