@@ -21,7 +21,8 @@ describe("public HTTPS gateway", () => {
   });
 
   it("rejects non-HTTPS and private destinations", async () => {
-    await expect(parseAllowedTarget("http://example.com/game")).rejects.toThrow("HTTPS");
+    await expect(parseAllowedTarget("ftp://example.com/game")).rejects.toThrow("HTTPS");
+    await expect(parseAllowedTarget("http://example.com/game")).resolves.toMatchObject({ protocol: "https:" });
     await expect(parseAllowedTarget("https://localhost:3000/")).rejects.toThrow("locais");
     await expect(assertPublicHttpsTarget(new URL("https://127.0.0.1/"))).rejects.toThrow("público");
   });

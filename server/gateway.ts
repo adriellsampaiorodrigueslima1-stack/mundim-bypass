@@ -56,9 +56,11 @@ export async function assertPublicHttpsTarget(target: URL) {
 
 export async function parseAllowedTarget(rawTarget: string) {
   const trimmed = rawTarget.trim();
-  const normalized = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
-    ? trimmed
-    : `https://${trimmed.replace(/^\/\//, "")}`;
+  const normalized = /^http:\/\//i.test(trimmed)
+    ? `https://${trimmed.slice(7)}`
+    : /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
+      ? trimmed
+      : `https://${trimmed.replace(/^\/\//, "")}`;
   let target: URL;
   try {
     target = new URL(normalized);

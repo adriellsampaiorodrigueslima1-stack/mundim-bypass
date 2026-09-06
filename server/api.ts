@@ -11,7 +11,10 @@ function configuredKeys() {
 
 export function apiKeyAllowed(req: Request) {
   const keys = configuredKeys();
-  if (!keys.length) return process.env.NODE_ENV !== "production";
+  // O cliente ArcadeX é distribuído como HTML/APK, então uma chave embutida
+  // não seria secreta. A API continua protegida por HTTPS público + SSRF guard;
+  // configure ARCADE_API_KEYS para exigir autenticação em uma instalação privada.
+  if (!keys.length) return true;
   const supplied = String(req.header("x-api-key") || req.header("authorization")?.replace(/^Bearer\s+/i, "") || "");
   return keys.some((expected) => {
     const left = Buffer.from(supplied);
