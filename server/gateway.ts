@@ -169,7 +169,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     document.documentElement.appendChild(loader);
     const watermark = document.createElement('div');
     watermark.id = 'bypassschool-watermark';
-    watermark.innerHTML = '<span class="bs-watermark-name">bypassschool</span><span class="bs-watermark-sep">·</span><span>' + site + '</span><span class="bs-watermark-sep">·</span><span id="bypassschool-ping">ping...</span>';
+    watermark.innerHTML = '<span class="bs-watermark-name">Mundim Bypass</span><span class="bs-watermark-sep">·</span><span>' + site + '</span><span class="bs-watermark-sep">·</span><span id="bypassschool-ping">ping...</span>';
     document.documentElement.appendChild(watermark);
     const dismissLoader = () => { loader.classList.add('bs-ready'); window.setTimeout(() => loader.remove(), 500); };
     if (document.readyState === 'complete') dismissLoader(); else window.addEventListener('load', dismissLoader, { once: true });
