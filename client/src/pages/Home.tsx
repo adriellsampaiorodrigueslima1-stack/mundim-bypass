@@ -149,7 +149,7 @@ function Home() {
       <header className="topbar container">
         <a className="brand" href="#top" aria-label="Mundim Bypass início">
           <span className="brand-mark"><Command size={17} strokeWidth={2.4} /></span>
-          <span>bypass<span>school</span></span>
+          <span>Mundim <span>Bypass</span></span>
         </a>
         <nav className={showMobileNav ? "nav-links open" : "nav-links"} aria-label="Navegação principal">
           <a href="#launcher" onClick={() => setShowMobileNav(false)}>Launcher</a>
