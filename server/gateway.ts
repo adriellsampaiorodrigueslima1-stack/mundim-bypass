@@ -161,7 +161,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     window.WebSocket = GatewayWebSocket;
 
     const style = document.createElement('style');
-    style.textContent = '@keyframes bsSpin { to { transform: rotate(360deg); } } @keyframes bsPulse { 0%,100% { opacity:.5; } 50% { opacity:.9; } } @keyframes bsIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } } #bypassschool-loader { position:fixed; inset:0; z-index:2147483646; display:grid; place-items:center; background:radial-gradient(circle at 50% 42%, #102642 0%, #050912 56%, #02040a 100%); color:#eaf7ff; font-family:system-ui,-apple-system,sans-serif; transition:opacity .42s ease, visibility .42s ease; } #bypassschool-loader.bs-ready { opacity:0; visibility:hidden; pointer-events:none; } .bs-loader-box { text-align:center; animation:bsIn .55s ease both; } .bs-loader-ring { width:58px; height:58px; margin:0 auto 20px; border:2px solid rgba(57,196,255,.2); border-top-color:#36c6ff; border-right-color:#8ef0ff; border-radius:50%; animation:bsSpin 1s linear infinite; box-shadow:0 0 26px rgba(35,184,255,.26); } .bs-loader-title { letter-spacing:.12em; text-transform:lowercase; font-size:14px; font-weight:600; } .bs-loader-sub { margin-top:9px; color:#80a3b9; font-size:11px; } #bypassschool-watermark { position:fixed; top:9px; right:12px; z-index:2147483645; display:flex; align-items:center; gap:5px; padding:4px 7px; border:1px solid rgba(74,191,239,.2); border-radius:5px; background:rgba(3,12,24,.68); box-shadow:0 3px 12px rgba(0,0,0,.16); color:#a9c8d8; font:9px ui-monospace,SFMono-Regular,monospace; backdrop-filter:blur(7px); pointer-events:none; animation:bsPulse 3.4s ease-in-out infinite; } .bs-watermark-name { color:#49c8ff; font-weight:700; } .bs-watermark-sep { color:#52798f; }';
+    style.textContent = '@keyframes bsSpin { to { transform: rotate(360deg); } } @keyframes bsPulse { 0%,100% { opacity:.5; } 50% { opacity:.9; } } @keyframes bsIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } } #bypassschool-loader { position:fixed; inset:0; z-index:2147483646; display:grid; place-items:center; background:radial-gradient(circle at 50% 42%, #102642 0%, #050912 56%, #02040a 100%); color:#eaf7ff; font-family:system-ui,-apple-system,sans-serif; transition:opacity .42s ease, visibility .42s ease; } #bypassschool-loader.bs-ready { opacity:0; visibility:hidden; pointer-events:none; } .bs-loader-box { text-align:center; animation:bsIn .55s ease both; } .bs-loader-ring { width:58px; height:58px; margin:0 auto 20px; border:2px solid rgba(57,196,255,.2); border-top-color:#36c6ff; border-right-color:#8ef0ff; border-radius:50%; animation:bsSpin 1s linear infinite; box-shadow:0 0 26px rgba(35,184,255,.26); } .bs-loader-title { letter-spacing:.12em; text-transform:lowercase; font-size:14px; font-weight:600; } .bs-loader-sub { margin-top:9px; color:#80a3b9; font-size:11px; } #bypassschool-watermark { position:fixed; top:9px; right:12px; z-index:2147483645; display:flex; align-items:center; gap:5px; padding:4px 7px; border:1px solid rgba(74,191,239,.2); border-radius:5px; background:rgba(3,12,24,.68); box-shadow:0 3px 12px rgba(0,0,0,.16); color:#a9c8d8; font:9px ui-monospace,SFMono-Regular,monospace; backdrop-filter:blur(7px); animation:bsPulse 3.4s ease-in-out infinite; } .bs-watermark-name { color:#49c8ff; font-weight:700; } .bs-watermark-sep { color:#52798f; } #bypassschool-emergency { border:0; border-radius:3px; padding:2px 5px; background:#d92d3f; color:#fff; font:700 8px ui-monospace,monospace; cursor:pointer; pointer-events:auto; } #bypassschool-emergency:hover { background:#ff4658; }';
     document.head.appendChild(style);
     const loader = document.createElement('div');
     loader.id = 'bypassschool-loader';
@@ -169,8 +169,11 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     document.documentElement.appendChild(loader);
     const watermark = document.createElement('div');
     watermark.id = 'bypassschool-watermark';
-    watermark.innerHTML = '<span class="bs-watermark-name">Mundim Bypass</span><span class="bs-watermark-sep">·</span><span>' + site + '</span><span class="bs-watermark-sep">·</span><span id="bypassschool-ping">ping...</span>';
+    watermark.innerHTML = '<span class="bs-watermark-name">Mundim Bypass</span><span class="bs-watermark-sep">·</span><span>' + site + '</span><span class="bs-watermark-sep">·</span><span id="bypassschool-ping">ping...</span><button id="bypassschool-emergency" type="button" title="Encerrar sessão (tecla 0)">SAIR</button>';
     document.documentElement.appendChild(watermark);
+    const emergency = () => { navigator.sendBeacon('/api/gateway/close', new Blob([JSON.stringify({ token })], { type:'application/json' })); window.stop(); document.documentElement.innerHTML = '<main style="min-height:100vh;display:grid;place-items:center;background:#050912;color:#eaf7ff;font:16px system-ui;text-align:center"><div><h1>Sessão encerrada</h1><p>O conteúdo foi interrompido com segurança.</p></div></main>'; };
+    document.getElementById('bypassschool-emergency').addEventListener('click', emergency);
+    window.addEventListener('keydown', (event) => { if (event.key === '0') emergency(); });
     const dismissLoader = () => { loader.classList.add('bs-ready'); window.setTimeout(() => loader.remove(), 500); };
     if (document.readyState === 'complete') dismissLoader(); else window.addEventListener('load', dismissLoader, { once: true });
     window.setTimeout(dismissLoader, 7000);
@@ -203,7 +206,10 @@ async function handleGatewayRequest(req: Request, res: Response) {
   try {
     const claims = await readGatewayToken(token);
     const upstreamUrl = new URL(getRequestPath(req, claims), claims.origin);
-    await assertPublicHttpsTarget(upstreamUrl);
+    // O origin já foi validado ao criar o token. Revalidar DNS em cada asset
+    // torna jogos com muitos scripts/imagens lentos e não acrescenta proteção
+    // quando o recurso permanece no mesmo origin autorizado.
+    if (upstreamUrl.origin !== claims.origin) await assertPublicHttpsTarget(upstreamUrl);
 
     const upstream = await fetch(upstreamUrl, {
       method: req.method === "HEAD" ? "HEAD" : "GET",
@@ -212,6 +218,7 @@ async function handleGatewayRequest(req: Request, res: Response) {
       headers: {
         accept: req.headers.accept || "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "accept-language": req.headers["accept-language"] || "pt-BR,pt;q=0.9,en;q=0.8",
+        "accept-encoding": req.headers["accept-encoding"] || "gzip, br, deflate",
         "user-agent": "bypassschool-authorized-gateway/0.3",
       },
     });
