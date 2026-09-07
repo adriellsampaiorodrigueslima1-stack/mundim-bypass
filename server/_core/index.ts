@@ -6,6 +6,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerGatewayRoutes } from "../gateway";
 import { registerGatewayWebSockets } from "../websocketGateway";
 import { registerArcadeApi } from "../api";
+import { registerLockedContentApi } from "../lockedContent";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
@@ -36,6 +37,7 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerArcadeApi(app);
+  registerLockedContentApi(app);
   registerGatewayRoutes(app);
   app.use(
     "/api/trpc",
