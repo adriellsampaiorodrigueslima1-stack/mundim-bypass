@@ -147,7 +147,7 @@ function Home() {
       <div className="ambient ambient-two" />
 
       <header className="topbar container">
-        <a className="brand" href="#top" aria-label="bypassschool início">
+        <a className="brand" href="#top" aria-label="Mundim Bypass início">
           <span className="brand-mark"><Command size={17} strokeWidth={2.4} /></span>
           <span>bypass<span>school</span></span>
         </a>
@@ -248,7 +248,7 @@ function Home() {
         <div className="principle"><Activity size={19} /><div><strong>Realtime tunnel</strong><span>WebSocket bidirecional para jogos online.</span></div></div>
       </section>
 
-      <footer className="footer container"><span>© 2026 bypassschool</span><span className="footer-center"><span className="status-dot" /> all systems nominal</span><span>v0.2.0 / authorized gateway</span></footer>
+      <footer className="footer container"><span>© 2026 Mundim Bypass</span><span className="footer-center"><span className="status-dot" /> all systems nominal</span><span>v0.2.0 / authorized gateway</span></footer>
     </main>
   );
 }
