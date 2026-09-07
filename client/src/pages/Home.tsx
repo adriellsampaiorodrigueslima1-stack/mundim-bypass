@@ -147,9 +147,9 @@ function Home() {
       <div className="ambient ambient-two" />
 
       <header className="topbar container">
-        <a className="brand" href="#top" aria-label="Mundim Bypass início">
+        <a className="brand" href="#top" aria-label="Lara Mundim Bypass início">
           <span className="brand-mark"><Command size={17} strokeWidth={2.4} /></span>
-          <span>Mundim <span>Bypass</span></span>
+          <span>Lara <span>Mundim Bypass</span></span>
         </a>
         <nav className={showMobileNav ? "nav-links open" : "nav-links"} aria-label="Navegação principal">
           <a href="#launcher" onClick={() => setShowMobileNav(false)}>Launcher</a>
@@ -248,7 +248,7 @@ function Home() {
         <div className="principle"><Activity size={19} /><div><strong>Realtime tunnel</strong><span>WebSocket bidirecional para jogos online.</span></div></div>
       </section>
 
-      <footer className="footer container"><span>© 2026 Mundim Bypass</span><span className="footer-center"><span className="status-dot" /> all systems nominal</span><span>v0.2.0 / authorized gateway</span></footer>
+      <footer className="footer container"><span>© 2026 Lara Mundim Bypass</span><span className="footer-center"><span className="status-dot" /> all systems nominal</span><span>v0.2.0 / authorized gateway</span></footer>
     </main>
   );
 }
