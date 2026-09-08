@@ -44,8 +44,8 @@ describe("arcade API v1", () => {
     expect(response.status).toBe(201);
     expect(body.ok).toBe(true);
     expect(body.session.token).toMatch(/^ey/);
-    expect(body.session.gatewayUrl).toMatch(/^http:\/\/127\.0\.0\.1:/);
-    expect(body.session.websocketUrl).toMatch(/^ws:\/\/127\.0\.0\.1:/);
+    expect(body.session.gatewayUrl).toMatch(/^https:\/\/bypassgame-wzassucn\.manus\.space\//);
+    expect(body.session.websocketUrl).toMatch(/^wss:\/\/bypassgame-wzassucn\.manus\.space\//);
     expect(body.session.heartbeatUrl).toContain("/api/v1/sessions/heartbeat");
   });
 });

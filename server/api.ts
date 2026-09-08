@@ -43,8 +43,8 @@ function setApiHeaders(req: Request, res: Response) {
 }
 
 function absoluteUrl(req: Request, path: string) {
-  const forwardedProto = String(req.header("x-forwarded-proto") || "https").split(",")[0];
-  return `${forwardedProto}://${req.get("host")}${path}`;
+  const publicBase = (process.env.PUBLIC_GATEWAY_BASE_URL || "https://bypassgame-wzassucn.manus.space").replace(/\/+$/, "");
+  return `${publicBase}${path}`;
 }
 
 function unauthorized(res: Response) {
