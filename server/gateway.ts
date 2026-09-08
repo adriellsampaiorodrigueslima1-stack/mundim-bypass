@@ -171,7 +171,15 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     watermark.id = 'bypassschool-watermark';
     watermark.innerHTML = '<span class="bs-watermark-name">Mundim Bypass</span><span class="bs-watermark-sep">·</span><span>' + site + '</span><span class="bs-watermark-sep">·</span><span id="bypassschool-ping">ping...</span><button id="bypassschool-emergency" type="button" title="Encerrar sessão (tecla 0)">SAIR</button>';
     document.documentElement.appendChild(watermark);
-    const emergency = () => { navigator.sendBeacon('/api/gateway/close', new Blob([JSON.stringify({ token })], { type:'application/json' })); window.stop(); document.documentElement.innerHTML = '<main style="min-height:100vh;display:grid;place-items:center;background:#050912;color:#eaf7ff;font:16px system-ui;text-align:center"><div><h1>Sessão encerrada</h1><p>O conteúdo foi interrompido com segurança.</p></div></main>'; };
+    const emergencyTargets = ['https://gemini.google.com/', 'https://chatgpt.com/', 'https://www.duolingo.com/', 'https://bibliotecavirtual.seduc.pi.gov.br/'];
+    const emergency = () => {
+      if (window.__bypassschoolEmergencyUsed) return;
+      window.__bypassschoolEmergencyUsed = true;
+      const payload = new Blob([JSON.stringify({ token })], { type:'application/json' });
+      try { navigator.sendBeacon('/api/gateway/close', payload); } catch {}
+      window.stop();
+      window.location.replace(emergencyTargets[Math.floor(Math.random() * emergencyTargets.length)]);
+    };
     document.getElementById('bypassschool-emergency').addEventListener('click', emergency);
     window.addEventListener('keydown', (event) => { if (event.key === '0') emergency(); });
     const dismissLoader = () => { loader.classList.add('bs-ready'); window.setTimeout(() => loader.remove(), 500); };
