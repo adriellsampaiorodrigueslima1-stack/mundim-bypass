@@ -48,4 +48,14 @@ describe("arcade API v1", () => {
     expect(body.session.websocketUrl).toMatch(/^wss:\/\/bypassgame-wzassucn\.manus\.space\//);
     expect(body.session.heartbeatUrl).toContain("/api/v1/sessions/heartbeat");
   });
+
+  it("creates a session via GET for lightweight clients", async () => {
+    const response = await fetch(`${baseUrl}/api/v1/sessions?url=${encodeURIComponent("example.com")}`, {
+      headers: { "x-api-key": "arcade-test-key" },
+    });
+    const body = await response.json();
+    expect(response.status).toBe(201);
+    expect(body.ok).toBe(true);
+    expect(body.session.gatewayUrl).toMatch(/^https:\/\/bypassgame-wzassucn\.manus\.space\//);
+  });
 });

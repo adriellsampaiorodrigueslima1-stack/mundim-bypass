@@ -63,7 +63,8 @@ export function registerArcadeApi(app: Express) {
       name: "bypassschool arcade API",
       version: "1",
       endpoints: {
-        createSession: "POST /api/v1/sessions",
+        createSession: "GET /api/v1/sessions?url=https%3A%2F%2Fexample.com",
+        createSessionLegacy: "POST /api/v1/sessions",
         heartbeat: "POST /api/v1/sessions/heartbeat",
         close: "POST /api/v1/sessions/close",
         health: "GET /api/v1/health",
@@ -75,10 +76,10 @@ export function registerArcadeApi(app: Express) {
     res.json({ ok: true, service: "bypassschool-gateway", transport: "https + websocket" });
   });
 
-  app.post("/api/v1/sessions", async (req, res) => {
+  const createSession = async (req: Request, res: Response) => {
     if (!apiKeyAllowed(req)) return unauthorized(res);
     try {
-      const rawTarget = String(req.body?.url || req.body?.target || "").trim();
+      const rawTarget = String(req.query.url || req.query.target || req.body?.url || req.body?.target || "").trim();
       if (!rawTarget) return res.status(400).json({ ok: false, error: "Campo 'url' é obrigatório." });
       const target = await parseAllowedTarget(rawTarget);
       const token = await createGatewayToken(target);
@@ -100,7 +101,10 @@ export function registerArcadeApi(app: Express) {
     } catch (error) {
       return res.status(400).json({ ok: false, error: error instanceof Error ? error.message : "Destino inválido." });
     }
-  });
+  };
+
+  app.get("/api/v1/sessions", createSession);
+  app.post("/api/v1/sessions", createSession);
 
   app.post("/api/v1/sessions/heartbeat", async (req, res) => {
     if (!apiKeyAllowed(req)) return unauthorized(res);
