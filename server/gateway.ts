@@ -145,9 +145,8 @@ function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
   });
 }
 
-function rewriteDynamicAssetUrls(source: string, token: string) {
-  const prefix = `/gateway/${token}`;
-  return source.replace(/(["'`])\/?static\//g, `$1${prefix}/static/`);
+function rewriteDynamicModuleBase(source: string, token: string) {
+  return source.replace(/de\.p="\/"/g, `de.p="/gateway/${token}/"`);
 }
 
 function sessionHeartbeatScript(token: string, siteOrigin: string) {
@@ -268,7 +267,7 @@ async function handleGatewayRequest(req: Request, res: Response) {
     if (/(?:javascript|ecmascript|text\/js)/i.test(contentType) && upstream.body) {
       const source = await upstream.text();
       res.removeHeader("content-length");
-      return res.send(rewriteDynamicAssetUrls(source, token));
+      return res.send(rewriteDynamicModuleBase(source, token));
     }
     if (!upstream.body) return res.end();
     Readable.fromWeb(upstream.body as any).pipe(res);
