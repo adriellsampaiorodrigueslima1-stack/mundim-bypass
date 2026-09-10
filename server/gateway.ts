@@ -9,6 +9,7 @@ import { ENV } from "./_core/env";
 const SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const SESSION_MAX_TTL_MS = 24 * 60 * 60 * 1000;
 const activeSessions = new Map<string, number>();
+const closedSessions = new Set<string>();
 
 export type GatewayClaims = {
   sid: string;
@@ -85,6 +86,7 @@ export async function createGatewayToken(target: URL) {
     exp: Date.now() + SESSION_MAX_TTL_MS,
   };
 
+  closedSessions.delete(claims.sid);
   activeSessions.set(claims.sid, Date.now() + SESSION_IDLE_TIMEOUT_MS);
   return new CompactEncrypt(new TextEncoder().encode(JSON.stringify(claims)))
     .setProtectedHeader({ alg: "dir", enc: "A256GCM", typ: "BYPASS-GATEWAY" })
@@ -98,7 +100,8 @@ export async function readGatewayToken(token: string): Promise<GatewayClaims> {
 
   if (!claims || typeof claims.sid !== "string" || typeof claims.origin !== "string" ||
       typeof claims.initialPath !== "string" || typeof claims.exp !== "number" ||
-      claims.exp < Date.now() || typeof idleUntil !== "number" || idleUntil < Date.now()) {
+      claims.exp < Date.now() || closedSessions.has(claims.sid) ||
+      (typeof idleUntil === "number" && idleUntil < Date.now())) {
     throw new Error("Sessão fechada, ociosa ou inválida.");
   }
 
@@ -114,7 +117,10 @@ export async function closeGatewaySession(token: string) {
   try {
     const { plaintext } = await compactDecrypt(token, encryptionKey());
     const claims = JSON.parse(new TextDecoder().decode(plaintext)) as Partial<GatewayClaims>;
-    if (claims.sid) activeSessions.delete(claims.sid);
+    if (claims.sid) {
+      activeSessions.delete(claims.sid);
+      closedSessions.add(claims.sid);
+    }
   } catch {
     // Fechar uma sessão já inválida é idempotente.
   }
@@ -141,7 +147,7 @@ function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
 
 function rewriteDynamicAssetUrls(source: string, token: string) {
   const prefix = `/gateway/${token}`;
-  return source.replace(/(["'`])\/static\//g, `$1${prefix}/static/`);
+  return source.replace(/(["'`])\/?static\//g, `$1${prefix}/static/`);
 }
 
 function sessionHeartbeatScript(token: string, siteOrigin: string) {
