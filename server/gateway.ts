@@ -158,7 +158,9 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     const siteOrigin = 'https://' + site;
     const gatewayHttpUrl = (value) => {
       try {
-        const parsed = new URL(String(value), document.baseURI);
+        const raw = String(value);
+        const base = raw.startsWith('/') || raw.startsWith('?') || raw.startsWith('#') ? siteOrigin : document.baseURI;
+        const parsed = new URL(raw, base);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
         const sameOrigin = parsed.origin === siteOrigin;
         const bloxdSubdomain = site === 'bloxd.io' && (parsed.hostname === 'bloxd.io' || parsed.hostname.endsWith('.bloxd.io'));
@@ -190,7 +192,9 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     const NativeWebSocket = window.WebSocket;
     const GatewayWebSocket = function(url, protocols) {
       try {
-        const parsed = new URL(String(url), document.baseURI);
+        const raw = String(url);
+        const wsBase = siteOrigin.replace(/^https:/, 'wss:');
+        const parsed = new URL(raw, raw.startsWith('/') ? wsBase : document.baseURI);
         if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
           const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
           const encodedHost = encodeURIComponent(parsed.host);
