@@ -155,6 +155,34 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
   return `<script data-bypassschool-session="bridge">(() => {
     const token = ${safeToken};
     const site = ${safeSite};
+    const siteOrigin = 'https://' + site;
+    const gatewayHttpUrl = (value) => {
+      try {
+        const parsed = new URL(String(value), document.baseURI);
+        if (parsed.origin !== siteOrigin || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) return null;
+        return location.origin + '/gateway/' + token + parsed.pathname + parsed.search;
+      } catch { return null; }
+    };
+    const NativeFetch = window.fetch.bind(window);
+    window.fetch = function(input, init) {
+      const original = input instanceof Request ? input.url : String(input);
+      const rewritten = gatewayHttpUrl(original);
+      if (!rewritten) return NativeFetch(input, init);
+      if (input instanceof Request) return NativeFetch(new Request(rewritten, input), init);
+      return NativeFetch(rewritten, init);
+    };
+    const NativeXHR = window.XMLHttpRequest;
+    const GatewayXHR = function() {
+      const xhr = new NativeXHR();
+      const open = xhr.open;
+      xhr.open = function(method, url, ...rest) {
+        const rewritten = gatewayHttpUrl(url);
+        return open.call(xhr, method, rewritten || url, ...rest);
+      };
+      return xhr;
+    };
+    GatewayXHR.prototype = NativeXHR.prototype;
+    window.XMLHttpRequest = GatewayXHR;
     const NativeWebSocket = window.WebSocket;
     const GatewayWebSocket = function(url, protocols) {
       try {

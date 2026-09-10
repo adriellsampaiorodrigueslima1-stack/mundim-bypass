@@ -33,9 +33,13 @@ export function registerGatewayWebSockets(server: Server) {
       const upstreamHttps = websocketTarget(request, token, claims.origin);
       await assertPublicHttpsTarget(upstreamHttps);
       const upstreamUrl = upstreamHttps.toString().replace(/^https:/, "wss:");
+      const protocolHeader = request.headers["sec-websocket-protocol"];
+      const protocols = typeof protocolHeader === "string"
+        ? protocolHeader.split(",").map(value => value.trim()).filter(Boolean)
+        : [];
 
       websocketServer.handleUpgrade(request, socket, head, (client) => {
-        const upstream = new WebSocket(upstreamUrl, {
+        const upstream = new WebSocket(upstreamUrl, protocols.length ? protocols : undefined, {
           headers: {
             origin: claims.origin,
             "user-agent": "bypassschool-authorized-gateway/0.3",
