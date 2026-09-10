@@ -267,6 +267,12 @@ function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
     const value = upstream.headers.get(name);
     if (value) res.setHeader(name, value);
   }
+  const setCookies = typeof upstream.headers.getSetCookie === "function"
+    ? upstream.headers.getSetCookie()
+    : (upstream.headers.get("set-cookie") ? [upstream.headers.get("set-cookie") as string] : []);
+  for (const cookie of setCookies) {
+    res.append("set-cookie", cookie.replace(/;\s*Domain=[^;]+/gi, ""));
+  }
   res.setHeader("x-bypassschool-gateway", "public-https-session");
   res.setHeader("x-content-type-options", "nosniff");
 }
@@ -290,6 +296,8 @@ async function handleGatewayRequest(req: Request, res: Response) {
         "accept-language": req.headers["accept-language"] || "pt-BR,pt;q=0.9,en;q=0.8",
         "accept-encoding": req.headers["accept-encoding"] || "gzip, br, deflate",
         "user-agent": "bypassschool-authorized-gateway/0.3",
+        ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
+        ...(req.headers.referer ? { referer: req.headers.referer } : {}),
       },
     });
 
@@ -321,7 +329,10 @@ async function handleGatewayRequest(req: Request, res: Response) {
       return res.send(rewriteDynamicModuleBase(source, token));
     }
     if (!upstream.body) return res.end();
-    Readable.fromWeb(upstream.body as any).pipe(res);
+    Readable.fromWeb(upstream.body as any).on("error", () => {
+      if (!res.headersSent) res.status(502);
+      res.end();
+    }).pipe(res);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha ao abrir a sessão.";
     const status = message.includes("Sessão") ? 401 : 502;
