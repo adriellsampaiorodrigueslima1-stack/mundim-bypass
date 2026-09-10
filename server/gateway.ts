@@ -159,8 +159,12 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     const gatewayHttpUrl = (value) => {
       try {
         const parsed = new URL(String(value), document.baseURI);
-        if (parsed.origin !== siteOrigin || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) return null;
-        return location.origin + '/gateway/' + token + parsed.pathname + parsed.search;
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+        const sameOrigin = parsed.origin === siteOrigin;
+        const bloxdSubdomain = site === 'bloxd.io' && (parsed.hostname === 'bloxd.io' || parsed.hostname.endsWith('.bloxd.io'));
+        if (!sameOrigin && !bloxdSubdomain) return null;
+        const hostPrefix = sameOrigin ? '' : '/__host/' + encodeURIComponent(parsed.host);
+        return location.origin + '/gateway/' + token + hostPrefix + parsed.pathname + parsed.search;
       } catch { return null; }
     };
     const NativeFetch = window.fetch.bind(window);
@@ -239,6 +243,21 @@ function getRequestPath(req: Request, claims: GatewayClaims) {
   return `/${wildcard}${query}`;
 }
 
+function getUpstreamUrl(req: Request, claims: GatewayClaims) {
+  const requestPath = getRequestPath(req, claims);
+  const marker = "/__host/";
+  if (requestPath.startsWith(marker)) {
+    const encodedHostAndPath = requestPath.slice(marker.length);
+    const slashIndex = encodedHostAndPath.indexOf("/");
+    if (slashIndex <= 0) throw new Error("Destino de recurso inválido.");
+    const host = decodeURIComponent(encodedHostAndPath.slice(0, slashIndex));
+    const path = encodedHostAndPath.slice(slashIndex) || "/";
+    const target = new URL(`${path}`, `https://${host}`);
+    return target;
+  }
+  return new URL(requestPath, claims.origin);
+}
+
 function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
   for (const name of ["content-type", "cache-control", "etag", "last-modified"]) {
     const value = upstream.headers.get(name);
@@ -252,7 +271,7 @@ async function handleGatewayRequest(req: Request, res: Response) {
   const token = req.params.token;
   try {
     const claims = await readGatewayToken(token);
-    const upstreamUrl = new URL(getRequestPath(req, claims), claims.origin);
+    const upstreamUrl = getUpstreamUrl(req, claims);
     // O origin já foi validado ao criar o token. Revalidar DNS em cada asset
     // torna jogos com muitos scripts/imagens lentos e não acrescenta proteção
     // quando o recurso permanece no mesmo origin autorizado.
