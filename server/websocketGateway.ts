@@ -42,6 +42,8 @@ export function registerGatewayWebSockets(server: Server) {
         const upstream = new WebSocket(upstreamUrl, protocols.length ? protocols : undefined, {
           headers: {
             origin: claims.origin,
+            ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
+            ...(request.headers.referer ? { referer: request.headers.referer } : {}),
             "user-agent": "bypassschool-authorized-gateway/0.3",
           },
         });

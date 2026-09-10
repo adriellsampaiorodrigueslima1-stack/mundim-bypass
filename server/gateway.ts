@@ -287,8 +287,13 @@ async function handleGatewayRequest(req: Request, res: Response) {
     // quando o recurso permanece no mesmo origin autorizado.
     if (upstreamUrl.origin !== claims.origin) await assertPublicHttpsTarget(upstreamUrl);
 
+    const method = req.method.toUpperCase();
+    const hasBody = !["GET", "HEAD"].includes(method);
+    const requestBody = hasBody && req.body !== undefined
+      ? (typeof req.body === "string" ? req.body : JSON.stringify(req.body))
+      : undefined;
     const upstream = await fetch(upstreamUrl, {
-      method: req.method === "HEAD" ? "HEAD" : "GET",
+      method,
       redirect: "manual",
       signal: AbortSignal.timeout(15_000),
       headers: {
@@ -298,7 +303,9 @@ async function handleGatewayRequest(req: Request, res: Response) {
         "user-agent": "bypassschool-authorized-gateway/0.3",
         ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
         ...(req.headers.referer ? { referer: req.headers.referer } : {}),
+        ...(req.headers["content-type"] ? { "content-type": req.headers["content-type"] } : {}),
       },
+      body: requestBody,
     });
 
     if (upstream.status >= 300 && upstream.status < 400) {
