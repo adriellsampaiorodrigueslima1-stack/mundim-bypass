@@ -139,6 +139,11 @@ function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
   });
 }
 
+function rewriteDynamicAssetUrls(source: string, token: string) {
+  const prefix = `/gateway/${token}`;
+  return source.replace(/(["'`])\/static\//g, `$1${prefix}/static/`);
+}
+
 function sessionHeartbeatScript(token: string, siteOrigin: string) {
   const safeToken = JSON.stringify(token);
   const safeSite = JSON.stringify(siteOrigin.replace(/^https?:\/\//, ""));
@@ -151,7 +156,8 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
         const parsed = new URL(String(url), document.baseURI);
         if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
           const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-          const proxied = protocol + '//' + location.host + '/gateway-ws/' + token + parsed.pathname + parsed.search;
+          const encodedHost = encodeURIComponent(parsed.host);
+          const proxied = protocol + '//' + location.host + '/gateway-ws/' + token + '/__host/' + encodedHost + parsed.pathname + parsed.search;
           return protocols === undefined ? new NativeWebSocket(proxied) : new NativeWebSocket(proxied, protocols);
         }
       } catch {}
@@ -252,6 +258,11 @@ async function handleGatewayRequest(req: Request, res: Response) {
         : html.includes("</body>")
           ? html.replace(/<\/body>/i, `${sessionScript}</body>`)
           : `${html}${sessionScript}`);
+    }
+    if (/(?:javascript|ecmascript|text\/js)/i.test(contentType) && upstream.body) {
+      const source = await upstream.text();
+      res.removeHeader("content-length");
+      return res.send(rewriteDynamicAssetUrls(source, token));
     }
     if (!upstream.body) return res.end();
     Readable.fromWeb(upstream.body as any).pipe(res);

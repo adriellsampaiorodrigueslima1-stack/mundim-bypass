@@ -7,7 +7,17 @@ const websocketServer = new WebSocketServer({ noServer: true });
 
 function websocketTarget(request: IncomingMessage, token: string, claimsOrigin: string) {
   const requestUrl = new URL(request.url || "/", "http://gateway.local");
-  const upstream = new URL(`${requestUrl.pathname || "/"}${requestUrl.search}`, claimsOrigin);
+  const rawPath = requestUrl.pathname || "/";
+  const hostMarker = "/__host/";
+  if (rawPath.startsWith(hostMarker)) {
+    const encodedHostAndPath = rawPath.slice(hostMarker.length);
+    const slashIndex = encodedHostAndPath.indexOf("/");
+    if (slashIndex <= 0) throw new Error("WebSocket sem host válido.");
+    const host = decodeURIComponent(encodedHostAndPath.slice(0, slashIndex));
+    const path = encodedHostAndPath.slice(slashIndex) || "/";
+    return new URL(`${path}${requestUrl.search}`, `https://${host}`);
+  }
+  const upstream = new URL(`${rawPath}${requestUrl.search}`, claimsOrigin);
   return upstream;
 }
 
