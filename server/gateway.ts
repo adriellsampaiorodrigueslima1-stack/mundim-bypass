@@ -131,18 +131,37 @@ function gatewayPath(token: string, target: URL) {
   return `/gateway/${token}${suffix === "/" ? "/" : suffix}`;
 }
 
+function gatewayHostPath(token: string, target: URL, sessionOrigin: string) {
+  if (target.origin === sessionOrigin) return gatewayPath(token, target);
+  return `/gateway/${token}/__host/${encodeURIComponent(target.host)}${target.pathname || "/"}${target.search}`;
+}
+
+function isRelatedGameHost(sessionOrigin: string, target: URL) {
+  const sessionHost = new URL(sessionOrigin).hostname;
+  if (target.protocol !== "https:") return false;
+  if (target.hostname === sessionHost || target.hostname.endsWith(`.${sessionHost}`)) return true;
+  return sessionHost === "2v2.io" && (target.hostname === "files.2v2.io" || target.hostname === "api.2v2.io");
+}
+
 function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
   const attributePattern = /(src|href|action|poster)=("|')([^"']+)(\2)/gi;
-  return html.replace(attributePattern, (full, attribute: string, quote: string, value: string) => {
+  const rewritten = html.replace(attributePattern, (full, attribute: string, quote: string, value: string) => {
     if (/^(#|data:|mailto:|javascript:|blob:|about:)/i.test(value)) return full;
     try {
       const resolved = new URL(value, upstreamUrl);
-      if (resolved.origin !== upstreamUrl.origin || resolved.protocol !== "https:") return full;
-      return `${attribute}=${quote}${gatewayPath(token, resolved)}${quote}`;
+      if (!isRelatedGameHost(upstreamUrl.origin, resolved)) return full;
+      return `${attribute}=${quote}${gatewayHostPath(token, resolved, upstreamUrl.origin)}${quote}`;
     } catch {
       return full;
     }
   });
+  if (new URL(upstreamUrl).hostname === "2v2.io") {
+    return rewritten.replace(/https:\/\/(?:files|api)\.2v2\.io(?=\/|['"`\s])/g, (absolute) => {
+      const host = absolute.slice("https://".length);
+      return `/gateway/${token}/__host/${host}`;
+    });
+  }
+  return rewritten;
 }
 
 function rewriteDynamicModuleBase(source: string, token: string) {
@@ -156,6 +175,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     const token = ${safeToken};
     const site = ${safeSite};
     const siteOrigin = 'https://' + site;
+    const relatedHost = (hostname) => site === '2v2.io' && (hostname === 'files.2v2.io' || hostname === 'api.2v2.io');
     const gatewayHttpUrl = (value) => {
       try {
         const raw = String(value);
@@ -163,8 +183,8 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
         const parsed = new URL(raw, base);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
         const sameOrigin = parsed.origin === siteOrigin;
-        const bloxdSubdomain = site === 'bloxd.io' && (parsed.hostname === 'bloxd.io' || parsed.hostname.endsWith('.bloxd.io'));
-        if (!sameOrigin && !bloxdSubdomain) return null;
+        const relatedSubdomain = (site === 'bloxd.io' && (parsed.hostname === 'bloxd.io' || parsed.hostname.endsWith('.bloxd.io'))) || relatedHost(parsed.hostname);
+        if (!sameOrigin && !relatedSubdomain) return null;
         const hostPrefix = sameOrigin ? '' : '/__host/' + encodeURIComponent(parsed.host);
         return location.origin + '/gateway/' + token + hostPrefix + parsed.pathname + parsed.search;
       } catch { return null; }
