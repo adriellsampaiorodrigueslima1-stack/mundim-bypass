@@ -27,6 +27,8 @@ var ENV = {
 // server/gateway.ts
 var SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1e3;
 var SESSION_MAX_TTL_MS = 24 * 60 * 60 * 1e3;
+var UPSTREAM_TIMEOUT_MS = 3e4;
+var RETRYABLE_METHODS = /* @__PURE__ */ new Set(["GET", "HEAD"]);
 var activeSessions = /* @__PURE__ */ new Map();
 var closedSessions = /* @__PURE__ */ new Set();
 function isBlockedAddress(address) {
@@ -268,9 +270,36 @@ function copyResponseHeaders(upstream, res) {
   res.setHeader("x-bypassschool-gateway", "public-https-session");
   res.setHeader("x-content-type-options", "nosniff");
 }
+function applyGatewayCors(req, res) {
+  const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+  const configured = (process.env.ARCADE_CORS_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
+  const allowed = requestOrigin && (configured.includes("*") || configured.includes(requestOrigin));
+  if (allowed) {
+    res.setHeader("access-control-allow-origin", requestOrigin);
+    res.setHeader("access-control-allow-credentials", "true");
+    res.setHeader("vary", "Origin");
+  }
+  res.setHeader("access-control-allow-methods", "GET,HEAD,POST,PUT,PATCH,OPTIONS");
+  res.setHeader("access-control-allow-headers", "Content-Type, Range, If-None-Match, If-Modified-Since, X-Requested-With");
+}
+async function fetchUpstream(url, init, method) {
+  const attempts = RETRYABLE_METHODS.has(method) ? 2 : 1;
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+    } catch (error) {
+      lastError = error;
+      if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Falha ao conectar ao destino.");
+}
 async function handleGatewayRequest(req, res) {
   const token = req.params.token;
   try {
+    applyGatewayCors(req, res);
+    if (req.method === "OPTIONS") return res.status(204).end();
     const claims = await readGatewayToken(token);
     const upstreamUrl = getUpstreamUrl(req, claims);
     if (upstreamUrl.origin !== claims.origin) {
@@ -279,11 +308,10 @@ async function handleGatewayRequest(req, res) {
     }
     const method = req.method.toUpperCase();
     const hasBody = !["GET", "HEAD"].includes(method);
-    const requestBody = hasBody && req.body !== void 0 ? typeof req.body === "string" ? req.body : JSON.stringify(req.body) : void 0;
-    const upstream = await fetch(upstreamUrl, {
+    const requestBody = hasBody && req.body !== void 0 ? Buffer.isBuffer(req.body) || typeof req.body === "string" ? req.body : JSON.stringify(req.body) : void 0;
+    const upstream = await fetchUpstream(upstreamUrl, {
       method,
       redirect: "manual",
-      signal: AbortSignal.timeout(15e3),
       headers: {
         accept: req.headers.accept || "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "accept-language": req.headers["accept-language"] || "pt-BR,pt;q=0.9,en;q=0.8",
@@ -297,7 +325,7 @@ async function handleGatewayRequest(req, res) {
         ...req.headers["if-modified-since"] ? { "if-modified-since": req.headers["if-modified-since"] } : {}
       },
       body: requestBody
-    });
+    }, method);
     if (upstream.status >= 300 && upstream.status < 400) {
       const location = upstream.headers.get("location");
       if (!location) return res.status(upstream.status).end();
@@ -391,10 +419,15 @@ function registerGatewayWebSockets(server2) {
             origin: claims.origin,
             ...request.headers.cookie ? { cookie: request.headers.cookie } : {},
             ...request.headers.referer ? { referer: request.headers.referer } : {},
-            "user-agent": "bypassschool-authorized-gateway/0.3"
+            "user-agent": request.headers["user-agent"] || "Mundim-Bypass-Gateway/1.0"
           }
         });
+        const keepAlive = setInterval(() => {
+          if (client.readyState === WebSocket.OPEN) client.ping();
+          if (upstream.readyState === WebSocket.OPEN) upstream.ping();
+        }, 25e3);
         const closeBoth = (code = 1e3, reason = "") => {
+          clearInterval(keepAlive);
           if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) client.close(code, reason);
           if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) upstream.close(code, reason);
         };
@@ -532,6 +565,7 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 registerGatewayWebSockets(server);
 registerArcadeApi(app);
 registerGatewayRoutes(app);
+app.get("/ArcadeX.html", (_req, res) => res.sendFile(path.resolve(process.cwd(), "ArcadeX.html")));
 app.use(express.static(publicDir, { index: "index.html", redirect: false }));
 app.get("*", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
 var port = Number(process.env.PORT || 3e3);

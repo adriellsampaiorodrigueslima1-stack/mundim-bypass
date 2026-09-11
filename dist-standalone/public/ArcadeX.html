@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arcade X</title>
+    <style>
+        :root {
+            --bg-color: #0b0c10;
+            --card-bg: #1f2833;
+            --accent-color: #00f0ff;
+            --accent-glow: rgba(0, 240, 255, 0.4);
+            --text-color: #c5c6c7;
+            --text-light: #ffffff;
+            --text-muted: #66fcf1;
+            --locked-color: #ff0055;
+            --locked-glow: rgba(255, 0, 85, 0.4);
+            --warning-color: #ff9900;
+            --warning-glow: rgba(255, 153, 0, 0.4);
+            --retro-color: #a020f0;
+            --retro-glow: rgba(160, 32, 240, 0.4);
+            --study-color: #2ecc71;
+            --study-glow: rgba(46, 204, 113, 0.4);
+            --watch-color: #e74c3c;
+            --watch-glow: rgba(231, 76, 60, 0.4);
+            --danger-color: #ff3333;
+            --danger-glow: rgba(255, 51, 51, 0.4);
+            --emu-color: #00ffaa;
+            --emu-glow: rgba(0, 255, 170, 0.4);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding: 20px;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Foto da IA - Flutuante e Interativa */
+        .brand-logo-container {
+            position: fixed;
+            z-index: 999;
+            width: 70px;
+            height: 70px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            pointer-events: auto;
+            top: 25px;
+            left: 25px;
+        }
+
+        .brand-logo-container::before,
+        .brand-logo-container::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 2px solid var(--accent-color);
+            opacity: 0;
+            animation: vibrateWave 2s linear infinite;
+            pointer-events: none;
+        }
+
+        .brand-logo-container::after {
+            animation-delay: 1s;
+            border-color: var(--locked-color);
+        }
+
+        .ai-logo {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #00f0ff, #ff0055);
+            border-radius: 50%;
+            box-shadow: 0 0 25px var(--accent-glow), inset 0 0 15px rgba(255, 255, 255, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: transform 0.15s ease-out, background 0.3s ease;
+            animation: continuousRotate 8s linear infinite;
+        }
+
+        .ai-logo svg {
+            width: 32px;
+            height: 32px;
+            fill: #ffffff;
+            filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.9));
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            margin-top: 20px;
+            animation: fadeInDown 1s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        header h1 {
+            font-size: 3.5rem;
+            color: var(--text-light);
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-shadow: 0 0 15px var(--accent-glow);
+            margin-bottom: 10px;
+        }
+
+        header h1 span { color: var(--accent-color); }
+        header p { color: #45a29e; font-size: 1.2rem; font-weight: 500; }
+
+        /* Barra de Busca */
+        .search-container {
+            max-width: 600px;
+            margin: 0 auto 40px auto;
+            position: relative;
+            animation: fadeInUp 1s cubic-bezier(0.25, 1, 0.5, 1) 0.1s both;
+        }
+
+        .search-container input {
+            width: 100%;
+            padding: 16px 20px 16px 55px;
+            background-color: var(--card-bg);
+            border: 2px solid #45a29e;
+            border-radius: 50px;
+            color: var(--text-light);
+            font-size: 1.1rem;
+            outline: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .search-container input:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 25px var(--accent-glow);
+            transform: scale(1.02);
+        }
+
+        .search-container::before {
+            content: "🔍";
+            position: absolute;
+            left: 22px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.3rem;
+            z-index: 2;
+        }
+
+        /* Grid e Seções */
+        .categories-container { max-width: 1200px; margin: 0 auto; }
+        .category-section { margin-bottom: 45px; animation: fadeInUp 0.8s cubic-bezier(0.25, 1, 0.5, 1) both; }
+        
+        .category-title {
+            font-size: 1.4rem;
+            color: var(--text-light);
+            margin-bottom: 20px;
+            border-left: 5px solid var(--accent-color);
+            padding-left: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .warning-section .category-title { border-left-color: var(--warning-color); text-shadow: 0 0 10px var(--warning-glow); }
+        .retro-section .category-title { border-left-color: var(--retro-color); text-shadow: 0 0 10px var(--retro-glow); }
+        .study-section .category-title { border-left-color: var(--study-color); text-shadow: 0 0 10px var(--study-glow); }
+        .watch-section .category-title { border-left-color: var(--watch-color); text-shadow: 0 0 10px var(--watch-glow); }
+        .emu-section .category-title { border-left-color: var(--emu-color); text-shadow: 0 0 10px var(--emu-glow); }
+        .locked-section .category-title { border-left-color: var(--locked-color); text-shadow: 0 0 10px var(--locked-glow); }
+
+        .links-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; }
+
+        /* Cards Animados */
+        .game-card {
+            background-color: var(--card-bg);
+            border: 1px solid rgba(69, 162, 158, 0.2);
+            border-radius: 12px;
+            padding: 22px;
+            text-align: center;
+            text-decoration: none;
+            color: var(--text-light);
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 90px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            opacity: 0;
+            animation: cardSpawn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .game-card:hover {
+            transform: translateY(-6px) scale(1.03);
+            background-color: #233142;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .warning-section .game-card:hover { border-color: var(--warning-color); box-shadow: 0 0 20px var(--warning-glow); }
+        .retro-section .game-card:hover { border-color: var(--retro-color); box-shadow: 0 0 20px var(--retro-glow); }
+        .study-section .game-card:hover { border-color: var(--study-color); box-shadow: 0 0 20px var(--study-glow); }
+        .watch-section .game-card:hover { border-color: var(--watch-color); box-shadow: 0 0 20px var(--watch-glow); }
+        .emu-section .game-card:hover { border-color: var(--emu-color); box-shadow: 0 0 20px var(--emu-glow); }
+        .locked-section .game-card:hover { border-color: var(--locked-color); box-shadow: 0 0 20px var(--locked-glow); }
+
+        .game-card:active {
+            animation: clickCompress 0.15s ease-out;
+        }
+
+        .game-card span { font-size: 1.1rem; word-break: break-word; pointer-events: none; }
+
+        /* Pasta Trancada */
+        .locked-trigger-card {
+            background: linear-gradient(135deg, #1f2833 0%, #2d1124 100%);
+            border: 2px dashed var(--locked-color);
+            cursor: pointer;
+        }
+        .locked-trigger-card span { color: #ff4d88; display: flex; flex-direction: column; gap: 5px; align-items: center; }
+        .lock-icon { font-size: 1.5rem; animation: pulse 1.5s infinite; }
+        .unlocked-content { display: none; width: 100%; }
+        
+        .close-folder-btn {
+            background: #2d1124; border: 2px solid var(--locked-color); color: var(--locked-color);
+            border-radius: 8px; padding: 10px; margin-bottom: 15px; cursor: pointer; font-weight: bold;
+            display: flex; align-items: center; justify-content: center; gap: 8px; width: 160px; transition: all 0.2s;
+        }
+        .close-folder-btn:hover { background: var(--locked-color); color: white; box-shadow: 0 0 15px var(--locked-glow); }
+        .unlocked-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; width: 100%; }
+
+        /* Modal de Senha */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(11, 12, 16, 0.9); display: flex;
+            justify-content: center; align-items: center; z-index: 1000;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s ease; backdrop-filter: blur(8px);
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background-color: #1f2833; border: 2px solid var(--locked-color);
+            box-shadow: 0 0 30px var(--locked-glow); padding: 30px; border-radius: 16px;
+            text-align: center; max-width: 400px; width: 90%; transform: scale(0.7);
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .modal-overlay.active .modal-content { transform: scale(1); }
+        .modal-content input {
+            width: 100%; padding: 12px; background-color: #0b0c10; border: 2px solid #45a29e;
+            border-radius: 8px; color: white; font-size: 1.3rem; text-align: center; letter-spacing: 5px; outline: none; margin-bottom: 20px;
+        }
+        .modal-btns { display: flex; gap: 10px; justify-content: center; }
+        .modal-btn { padding: 10px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .btn-cancel { background-color: #333; color: white; }
+        .btn-confirm { background-color: var(--locked-color); color: white; }
+
+        /* POPUP MÉTODOS INTERATIVOS COMPLETO COM CORREÇÃO */
+        .redirect-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(11, 12, 16, 0.95); display: flex;
+            flex-direction: column; justify-content: center; align-items: center;
+            z-index: 5000; opacity: 0; pointer-events: none; transition: opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+            backdrop-filter: blur(12px);
+        }
+        .redirect-overlay.active { opacity: 1; pointer-events: auto; }
+        
+        .redirect-box {
+            background: #1f2833; padding: 35px; border-radius: 20px; border: 2px solid var(--accent-color);
+            box-shadow: 0 0 35px var(--accent-glow); max-width: 500px; width: 95%; text-align: center;
+            transform: translateY(30px); transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+        }
+        .redirect-overlay.active .redirect-box { transform: translateY(0); }
+        .redirect-box h2 { font-size: 2.1rem; color: white; margin-bottom: 5px; }
+        .redirect-box h2 span { color: var(--accent-color); font-weight: bold; }
+        .method-subtitle { font-size: 1rem; color: #45a29e; margin-bottom: 25px; }
+
+        .methods-list { display: flex; flex-direction: column; gap: 14px; margin-bottom: 25px; }
+        .method-option {
+            background-color: #0b0c10; border: 1px solid rgba(69, 162, 158, 0.4);
+            border-radius: 10px; padding: 18px; text-align: left; cursor: pointer;
+            transition: all 0.2s ease; display: flex; flex-direction: column; gap: 4px;
+        }
+        .method-option:hover {
+            border-color: var(--accent-color); background-color: #151f28;
+            transform: translateX(4px); box-shadow: inset 0 0 8px rgba(0, 240, 255, 0.1);
+        }
+        .method-title { font-size: 1.2rem; font-weight: bold; color: var(--text-light); }
+        .method-desc { font-size: 0.95rem; color: #8892b0; line-height: 1.4; }
+        .method-badge { font-weight: bold; font-size: 0.8rem; text-transform: uppercase; padding: 4px 8px; border-radius: 4px; width: fit-content; margin-top: 4px; display: inline-flex; align-items: center; gap: 4px; }
+        .badge-fast { background-color: rgba(46, 204, 113, 0.2); color: #2ecc71; }
+        .badge-bypass { background-color: rgba(255, 153, 0, 0.2); color: #ff9900; }
+        .badge-secure { background-color: rgba(0, 240, 255, 0.2); color: #00f0ff; }
+        .badge-auto { background-color: rgba(160, 32, 240, 0.2); color: #a020f0; }
+
+        .btn-abort {
+            background-color: #ff3333; color: white; border: none; padding: 14px;
+            font-size: 1.1rem; font-weight: bold; border-radius: 8px; cursor: pointer; width: 100%;
+            transition: all 0.2s; margin-top: 10px; display: block; box-shadow: 0 0 10px rgba(255, 51, 51, 0.2);
+        }
+        .btn-abort:hover { background-color: #cc0000; box-shadow: 0 0 15px var(--danger-glow); }
+
+        /* PAINEL PLAYGROUND (TELA CHEIA REAL) */
+        .iframe-view-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #000000; z-index: 3000; display: none; flex-direction: column;
+        }
+        
+        .iframe-control-bar {
+            background-color: #0f1015; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #232733;
+            transition: transform 0.1s ease-in-out;
+        }
+        .iframe-view-container.fullscreen-active .iframe-control-bar {
+            display: none !important;
+        }
+
+        .iframe-actions { display: flex; gap: 15px; }
+        .iframe-btn { padding: 8px 18px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.95rem; }
+        .btn-fullscreen { background-color: var(--accent-color); color: #000; }
+        .btn-close-game { background-color: #333; color: #fff; }
+        .btn-panic {
+            background: linear-gradient(135deg, #ff0055, #ff3333); color: white;
+            box-shadow: 0 0 15px var(--locked-glow); font-size: 1rem; padding: 10px 25px; animation: pulse 1.2s infinite;
+        }
+        
+        .game-frame-wrapper { flex-grow: 1; width: 100%; height: 100%; position: relative; }
+        .game-frame-wrapper iframe { width: 100%; height: 100%; border: none; background: #000; }
+        .no-results { text-align: center; color: #45a29e; font-size: 1.3rem; margin: 40px 0; display: none; }
+        .custom-section { max-width: 1200px; margin: 0 auto 45px; padding: 22px; border: 1px solid rgba(0, 240, 255, 0.22); border-radius: 14px; background: linear-gradient(135deg, rgba(31,40,51,.95), rgba(11,24,37,.88)); box-shadow: 0 8px 28px rgba(0,0,0,.18); }
+        .custom-section h2 { margin-bottom: 8px; color: var(--text-light); font-size: 1.35rem; }
+        .custom-section p { margin-bottom: 14px; color: #86a9b5; font-size: .95rem; }
+        .custom-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .custom-row input { flex: 1 1 300px; min-width: 0; padding: 13px 15px; border: 1px solid #45a29e; border-radius: 8px; background: #0b0c10; color: white; outline: none; }
+        .custom-row input:focus { border-color: var(--accent-color); box-shadow: 0 0 16px var(--accent-glow); }
+        .custom-btn { padding: 12px 15px; border: 1px solid rgba(0,240,255,.35); border-radius: 8px; background: rgba(0,240,255,.12); color: var(--text-light); font-weight: 700; cursor: pointer; }
+        .custom-btn:hover { background: rgba(0,240,255,.24); }
+        .custom-status { min-height: 18px; margin-top: 10px; color: #ffad66; font-size: .85rem; }
+
+        /* Keyframes */
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes cardSpawn { from { opacity: 0; transform: scale(0.6) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
+        .shake { animation: shake 0.4s ease-in-out; }
+        @keyframes clickCompress { 0% { transform: scale(1); } 50% { transform: scale(0.92) rotate(-1deg); } 100% { transform: scale(1); } }
+        @keyframes continuousRotate { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes vibrateWave { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.6); opacity: 0; } }
+
+        @media (max-width: 900px) {
+            .brand-logo-container { pointer-events: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Logo IA Flutuante -->
+    <div class="brand-logo-container" id="brandLogoContainer">
+        <div class="ai-logo" id="brandLogo">
+            <svg viewBox="0 0 24 24">
+                <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4M12,18C8.69,18 6,15.31 6,12C6,10.93 6.28,9.93 6.77,9.07L9.93,14.55C10.32,15.22 11.09,15.65 11.92,15.65C12.75,15.65 13.5,15.22 13.91,14.55L17.07,9.07C17.56,9.93 17.85,10.93 17.85,12C17.85,15.31 15.15,18 12,18M12,10A1.5,1.5 0 0,0 10.5,11.5A1.5,1.5 0 0,0 12,13A1.5,1.5 0 0,0 13.5,11.5A1.5,1.5 0 0,0 12,10Z"/>
+            </svg>
+        </div>
+    </div>
+
+    <header>
+        <h1>Arcade <span>X</span></h1>
+        <p>Hub de jogos rápidos e experiências web.</p>
+    </header>
+
+    <div class="search-container">
+        <input type="text" id="searchInput" placeholder="Pesquise por jogos, sites ou categorias...">
+    </div>
+
+    <div class="categories-container" id="categoriesContainer">
+
+        <!-- ESTUDAR -->
+        <div class="category-section study-section" data-category="estudar seduc pi estudante biblioteca virtual login elefante letrado duolingo escola tarefas english central nectar">
+            <h2 class="category-title">📚 Educação</h2>
+            <div class="links-grid">
+                <div class="game-card" data-url="https://estudante.seduc.pi.gov.br/" data-direct="true"><span>Portal Estudante SEDUC</span></div>
+                <div class="game-card" data-url="https://bibliotecavirtual.seduc.pi.gov.br/login/index.php" data-direct="true"><span>Biblioteca Virtual SEDUC</span></div>
+                <div class="game-card" data-url="https://login.elefanteletrado.com.br/student" data-direct="true"><span>Elefante Letrado Student</span></div>
+                <div class="game-card" data-url="https://pt.englishcentral.com/partner/nectar/authenticate" data-direct="true"><span>English Central SEDUC</span></div>
+                <div class="game-card" data-url="https://pt.duolingo.com/" data-direct="true"><span>Duolingo Idiomas</span></div>
+            </div>
+        </div>
+
+        
+        <!-- MAIS JOGADOS -->
+        <div class="category-section" data-category="mais jogados bloxd quenq veck">
+            <h2 class="category-title">🔥 Mais jogados</h2>
+            <div class="links-grid">
+                <div class="game-card" data-url="https://bloxd.io/"><span>Bloxd.io</span></div>
+                <div class="game-card" data-url="https://quenq.com/apps/vc-web/#"><span>Quenq VC Web</span></div>
+                <div class="game-card" data-url="https://veck.io/"><span>Veck.io</span></div>
+            </div>
+        </div>
+
+        <!-- TIRO -->
+        <div class="category-section warning-section" data-category="tiro fps ação mira arena">
+            <h2 class="category-title">🎯 Tiro</h2>
+            <div class="links-grid">
+                <div class="game-card" data-url="https://krunker.io/"><span>Krunker</span></div>
+                <div class="game-card" data-url="https://shellshock.io/"><span>Shell Shockers</span></div>
+                <div class="game-card" data-url="https://www.crazygames.com/game/rooftop-snipers"><span>Rooftop Snipers</span></div>
+                <div class="game-card" data-url="https://venge.io/"><span>Venge.io</span></div>
+            </div>
+        </div>
+
+        <!-- CRIADOS PELA ESCOLA -->
+        <div class="category-section study-section" data-category="criados pela escola rede morta projeto escolar">
+            <h2 class="category-title">🏫 Criados pela escola</h2>
+            <div class="links-grid">
+                <div class="game-card" data-url="https://rede-morta.vercel.app/"><span>Rede-Morta</span></div>
+            </div>
+        </div>
+
+        <!-- ASSISTIR -->
+        <div class="category-section watch-section" data-category="assistir series filmes youtube crunchyroll netflix videos anime desenhos youtube-falsificado invidious">
+            <h2 class="category-title">🎬 Vídeos</h2>
+            <div class="links-grid">
+                <div class="game-card" data-url="https://www.youtube.com/" data-youtube="true"><span>YouTube</span></div>
+                <div class="game-card" data-url="https://yewtu.be" data-youtube="true"><span>YouTube alternativo</span></div>
+                <div class="game-card" data-url="https://www.crunchyroll.com/pt-br"><span>Crunchyroll (Animes)</span></div>
+                <div class="game-card" data-url="https://www.netflix.com"><span>Netflix</span></div>
+            </div>
+        </div>
+
+        <!-- JOGOS .IO COMPLETO COM DEEEP E MOPE -->
+        <div class="category-section" data-category="jogos io mope deeep slither diep agar paper hole multiplayer minhoca peixe animais evolucao worms peixes wings flyordie evoworld evo wars zombs gartic">
+            <h2 class="category-title">🌐 Multiplayer</h2>
+            <div class="links-grid">
+                <div class="game-card" data-url="https://mope.io"><span>Mope.io</span></div>
+                <div class="game-card" data-url="https://deeeep.io/"><span>Deeep.io (Jogo do Peixe)</span></div>
+                <div class="game-card" data-url="https://slither.io/"><span>Slither.io</span></div>
+                <div class="game-card" data-url="https://diep.io/"><span>Diep.io</span></div>
+                <div class="game-card" data-url="https://agar.io/"><span>Agar.io</span></div>
+                <div class="game-card" data-url="https://paper-io.com/"><span>Paper.io 2</span></div>
+                <div class="game-card" data-url="https://hole-io.com/"><span>Hole.io</span></div>
+                <div class="game-card" data-url="https://wings.io/"><span>Wings.io (Aviões)</span></div>
+                <div class="game-card" data-url="https://evoworld.io/"><span>FlyOrDie.io (EvoWorld)</span></div>
+                <div class="game-card" data-url="https://evowars.io/"><span>EvoWars.io</span></div>
+                <div class="game-card" data-url="https://zombs.io/"><span>Zombs.io</span></div>
+                <div class="game-card" data-url="https://gartic.io/"><span>Gartic.io</span></div>
+            </div>
+        </div>
+
+        <!-- LINKS DESBLOQUEADOS -->
+        <div class="category-section warning-section" data-category="arcade jogos dash geometry dash poki 1001jogos ojogos clickjogos crazygames coolmathgames retrogames playclassic myemulator emulatorgames armorgames addictinggames friv bestgames pacogames">
+            <h2 class="category-title">🕹️ Arcade</h2>
+            <div class="links-grid">
+                <div class="game-card" data-url="http://poki.com"><span>Poki (Principal)</span></div>
+                <div class="game-card" data-url="http://poki.com/en/mini"><span>Poki Mini (EN)</span></div>
+                <div class="game-card" data-url="http://poki.com/br/mini"><span>Poki Mini (BR)</span></div>
+                <div class="game-card" data-url="https://poki.com/br/g/motor-x3m"><span>Moto X3M (Poki)</span></div>
+                <div class="game-card" data-url="https://www.1001jogos.com.br/"><span>1001 Jogos</span></div>
+                <div class="game-card" data-url="http://ojogos.com.br"><span>O Jogos</span></div>
+                <div class="game-card" data-url="http://clickjogos.com.br"><span>Click Jogos</span></div>
+                <div class="game-card" data-url="http://crazygames.com"><span>Crazy Games</span></div>
+                <div class="game-card" data-url="http://coolmathgames.com"><span>Coolmath Games</span></div>
+                <div class="game-card" data-url="https://www.retrogames.cc/"><span>RetroGames.cc</span></div>
+                <div class="game-card" data-url="https://www.playclassic.games/"><span>PlayClassic Games</span></div>
+                <div class="game-card" data-url="https://myemulator.online/"><span>MyEmulator.online</span></div>
+                <div class="game-card" data-url="https://emulatorgames.online/"><span>EmulatorGames Online</span></div>
+                <div class="game-card" data-url="http://armorgames.com/"><span>Armor Games</span></div>
+                <div class="game-card" data-url="http://addictinggames.com/"><span>Addicting Games</span></div>
+                <div class="game-card" data-url="https://www.friv.com/"><span>Friv.com</span></div>
+                <div class="game-card" data-url="http://bestgames.com/"><span>Best Games</span></div>
+                <div class="game-card" data-url="http://pacogames.com/"><span>Paco Games</span></div>
+                <div class="game-card" data-url="https://geometrylitepc.io/"><span>Geometry Dash</span></div>
+            </div>
+        </div>
+
+        <!-- RETRO NOSTALGIA -->
+        <div class="category-section retro-section" data-category="retro nostalgia vimm lair vault retrogames.cz antigos classic gba emupedia emuos classicreload sneslive playretrogames">
+            <h2 class="category-title">👾 Retrô</h2>
+            <div class="links-grid">
+                <div class="game-card" data-url="https://vimm.net/"><span>Vimm's Lair Vault</span></div>
+                <div class="game-card" data-url="https://www.retrogames.cz/"><span>RetroGames.cz</span></div>
+                <div class="game-card" data-url="https://emuos.org/"><span>Emupedia / EmuOS</span></div>
+                <div class="game-card" data-url="https://classicreload.com/"><span>ClassicReload (DOS)</span></div>
+                <div class="game-card" data-url="https://www.sneslive.com/"><span>Sneslive</span></div>
+                <div class="game-card" data-url="https://www.playretrogames.com/"><span>PlayRetroGames</span></div>
+            </div>
+        </div>
+
+        <!-- JOGA RÁPIDO NO INTERVALO -->
+        <div class="category-section" data-category="joga rapido no intervalo kizi snokido lagged slope polytrack cookie clicker venge snow rider neal fun primarygames gameflare gamaverse playhop agame duck life">
+            <h2 class="category-title">⏱️ Casual</h2>
+            <div class="links-grid">
+                <div class="game-card" data-url="http://kizi.com"><span>Kizi</span></div>
+                <div class="game-card" data-url="http://isladejuegos.com/mini-games"><span>Isla de Juegos</span></div>
+                <div class="game-card" data-url="http://snokido.com"><span>Snokido</span></div>
+                <div class="game-card" data-url="http://lagged.com"><span>Lagged</span></div>
+                <div class="game-card" data-url="https://slopegame.online/"><span>Slope Game</span></div>
+                <div class="game-card" data-url="https://polytrack.io/"><span>Polytrack</span></div>
+                <div class="game-card" data-url="https://orteil.dashnet.org/cookieclicker/"><span>Cookie Clicker</span></div>
+                <div class="game-card" data-url="https://venge.io/"><span>Venge.io (FPS)</span></div>
+                <div class="game-card" data-url="https://snowrider3d.com/"><span>Snow Rider 3D</span></div>
+                <div class="game-card" data-url="https://neal.fun/"><span>Neal.fun</span></div>
+                <div class="game-card" data-url="https://www.primarygames.com/"><span>PrimaryGames</span></div>
+                <div class="game-card" data-url="https://www.gameflare.com/"><span>Gameflare</span></div>
+                <div class="game-card" data-url="https://gamaverse.com/"><span>Gamaverse</span></div>
+                <div class="game-card" data-url="https://playhop.com/"><span>Playhop</span></div>
+                <div class="game-card" data-url="http://agame.com"><span>Agame</span></div>
+                <div class="game-card" data-url="https://ducklife.online/"><span>Duck Life (Direct)</span></div>
+            </div>
+        </div>
+
+        <!-- AÇÃO E AVENTURA -->
+        <div class="category-section" data-category="ação aventura san joaquin industries plays hooda scratch terraria bloxd classroom6x unblockedgames66 66games unblockedgameswtf shortcutgames unblockedgamespod freemathplay algebra.icu kbhgames buildnow">
+            <h2 class="category-title">⚡ Ação e aventura</h2>
+            <div class="links-grid">
+                <div class="game-card" data-url="http://sanjoaquinindustries.com"><span>San Joaquin Ind.</span></div>
+                <div class="game-card" data-url="http://plays.org"><span>Plays.org</span></div>
+                <div class="game-card" data-url="https://www.hoodamath.com"><span>Hooda Math</span></div>
+                <div class="game-card" data-url="https://scratch.mit.edu/projects/331405008/"><span>Terraria (Scratch)</span></div>
+                <div class="game-card" data-url="https://bloxd.io/"><span>Bloxd.io (Minecraft)</span></div>
+                <div class="game-card" data-url="https://sites.google.com/view/classroom6x"><span>Classroom 6x</span></div>
+                <div class="game-card" data-url="https://unblockedgames66.org/"><span>UnblockedGames 66</span></div>
+                <div class="game-card" data-url="https://66games.io/"><span>66games.io</span></div>
+                <div class="game-card" data-url="https://unblockedgameswtf.com/"><span>UnblockedGames WTF</span></div>
+                <div class="game-card" data-url="https://shortcutgames.com/"><span>Shortcut Games</span></div>
+                <div class="game-card" data-url="https://unblockedgamespod.com/"><span>UnblockedGamesPod</span></div>
+                <div class="game-card" data-url="https://freemathplay.com/"><span>FreeMathPlay</span></div>
+                <div class="game-card" data-url="https://algebra.icu/"><span>Algebra.icu</span></div>
+                <div class="game-card" data-url="https://kbhgames.com/"><span>KBH Games</span></div>
+                <div class="game-card" data-url="https://buildnowgg.github.io/"><span>BuildNow GG (Construir)</span></div>
+            </div>
+        </div>
+
+        <!-- PERSONALIZAR -->
+        <section class="custom-section" id="customSection">
+            <h2>🛠️ Personalizar</h2>
+            <p>Digite qualquer endereço público e escolha onde abrir. Links de vídeos do YouTube usam o player oficial incorporado.</p>
+            <div class="custom-row">
+                <input id="customUrlInput" type="text" placeholder="exemplo.com ou https://exemplo.com" aria-label="Endereço personalizado">
+                <button class="custom-btn" id="customInsideBtn" type="button">Abrir dentro do site</button>
+                <button class="custom-btn" id="customTabBtn" type="button">Abrir em uma guia</button>
+            </div>
+            <div class="custom-status" id="customStatus" role="status"></div>
+        </section>
+
+        <!-- PASTA TRANCADA -->
+        <div class="category-section locked-section" id="lockedSection" data-category="plataformas ferramentas">
+            <h2 class="category-title">🧩 Plataformas e ferramentas</h2>
+            <div class="links-grid" id="lockedGrid">
+                <div class="game-card locked-trigger-card" id="lockTrigger">
+                    <span>
+                        <div class="lock-icon">🔒</div>
+                        Acessar Pasta Privada
+                    </span>
+                </div>
+                <div class="unlocked-content" id="unlockedContent">
+                    <button class="close-folder-btn" id="btnCloseFolder">🔒 Fechar Pasta</button>
+                    <div class="unlocked-grid" id="unlockedGrid"></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="no-results" id="noResults">Nenhum resultado encontrado... 😢</div>
+
+    <!-- Modal de Senha -->
+    <div class="modal-overlay" id="passwordModal">
+        <div class="modal-content" id="modalBox">
+            <h3>🔒 Área Restrita</h3>
+            <p>Insira o código de acesso:</p>
+            <input type="password" id="secretCodeInput" maxlength="10" placeholder="•••••••">
+            <div class="modal-btns">
+                <button class="modal-btn btn-cancel" id="btnCancel">Voltar</button>
+                <button class="modal-btn btn-confirm" id="btnConfirm">Acessar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- POPUP MÉTODOS -->
+    <div class="redirect-overlay" id="redirectOverlay">
+        <div class="redirect-box">
+            <h2>Abrir <span class="game-target-name" id="targetGameName">Jogo</span></h2>
+            <p class="method-subtitle">Selecione o motor de inicialização para esta sessão:</p>
+            
+            <div class="methods-list">
+                <div class="method-option" id="methodDirect">
+                    <span class="method-title">1. Abrir direto</span>
+                    <span class="method-desc">Abre o endereço original em uma nova guia.</span>
+                    <span class="method-badge badge-fast">⚡ MAIS RÁPIDO</span>
+                </div>
+
+                <div class="method-option" id="methodIframe">
+                    <span class="method-title">2. Abrir dentro do site</span>
+                    <span class="method-desc">Carrega o jogo dentro do Arcade X usando a sessão segura, quando compatível.</span>
+                    <span class="method-badge badge-secure">🔒 DENTRO DO ARCADE</span>
+                </div>
+
+                <div class="method-option" id="methodProxy">
+                    <span class="method-title">3. Desbloquear</span>
+                    <span class="method-desc">Abre em uma nova guia usando a sessão segura Mundim Bypass.</span>
+                    <span class="method-badge badge-bypass">🔐 SESSÃO SEGURA</span>
+                </div>
+
+                <div class="method-option" id="methodAuto">
+                    <span class="method-title">4. Automático</span>
+                    <span class="method-desc">Testa a sessão interna, a nova guia e a abertura direta, escolhendo o melhor resultado.</span>
+                    <span class="method-badge badge-auto">🤖 SELEÇÃO AUTOMÁTICA</span>
+                </div>
+            </div>
+
+            <button class="btn-abort" id="btnAbortRedirect">Voltar ao Painel</button>
+        </div>
+    </div>
+
+    <!-- PAINEL PLAYGROUND -->
+    <div class="iframe-view-container" id="iframeViewContainer">
+        <div class="iframe-control-bar" id="iframeControlBar">
+            <button class="iframe-btn btn-panic" id="btnPanic">⚠️ PÂNICO (Estudar)</button>
+            <div class="iframe-actions">
+                <button class="iframe-btn btn-fullscreen" id="btnToggleFullscreen">📺 Tela Cheia</button>
+                <button class="iframe-btn btn-close-game" id="btnCloseGame">❌ Sair do Jogo</button>
+            </div>
+        </div>
+        <div class="game-frame-wrapper">
+            <iframe id="gameIframe" src="" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
+        </div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const categories = document.querySelectorAll('.category-section');
+        const noResults = document.getElementById('noResults');
+        const lockTrigger = document.getElementById('lockTrigger');
+        const passwordModal = document.getElementById('passwordModal');
+        const modalBox = document.getElementById('modalBox');
+        const secretCodeInput = document.getElementById('secretCodeInput');
+        const btnCancel = document.getElementById('btnCancel');
+        const btnConfirm = document.getElementById('btnConfirm');
+        const unlockedContent = document.getElementById('unlockedContent');
+        const unlockedGrid = document.getElementById('unlockedGrid');
+        const btnCloseFolder = document.getElementById('btnCloseFolder');
+        const customUrlInput = document.getElementById('customUrlInput');
+        const customInsideBtn = document.getElementById('customInsideBtn');
+        const customTabBtn = document.getElementById('customTabBtn');
+        const customStatus = document.getElementById('customStatus');
+
+        const redirectOverlay = document.getElementById('redirectOverlay');
+        const targetGameName = document.getElementById('targetGameName');
+        const btnAbortRedirect = document.getElementById('btnAbortRedirect');
+        
+        const methodAuto = document.getElementById('methodAuto');
+        const methodDirect = document.getElementById('methodDirect');
+        const methodProxy = document.getElementById('methodProxy');
+        const methodIframe = document.getElementById('methodIframe');
+        
+        const iframeViewContainer = document.getElementById('iframeViewContainer');
+        const gameIframe = document.getElementById('gameIframe');
+        const btnCloseGame = document.getElementById('btnCloseGame');
+        const btnToggleFullscreen = document.getElementById('btnToggleFullscreen');
+        const btnPanic = document.getElementById('btnPanic');
+
+        let pendingUrl = "";
+        const BYPASS_API_BASES = [
+            window.location.origin
+        ];
+        const BYPASS_API_BASE = BYPASS_API_BASES[0];
+        const BYPASS_API_KEY = "";
+        let isYoutubeCard = false;
+
+        const panicUrls = [
+            "https://bibliotecavirtual.seduc.pi.gov.br/login/index.php",
+            "https://estudante.seduc.pi.gov.br/",
+            "https://login.elefanteletrado.com.br/student"
+        ];
+
+        function applyCardAnimations() {
+            document.querySelectorAll('.game-card').forEach((card, index) => {
+                card.style.animationDelay = `${index * 0.02}s`;
+            });
+        }
+
+        function runSearch() {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            let hasVisibleCategories = false;
+
+            categories.forEach(section => {
+                const categoryData = section.getAttribute('data-category').toLowerCase();
+                const isLockedSection = section.classList.contains('locked-section');
+                const cards = section.querySelectorAll('.links-grid > .game-card, .unlocked-grid > .game-card');
+                let hasVisibleCards = false;
+
+                cards.forEach(card => {
+                    if (card.id === 'lockTrigger') return;
+                    const cardText = card.textContent.toLowerCase();
+                    const matchesSearch = cardText.includes(searchTerm) || categoryData.includes(searchTerm);
+
+                    if (matchesSearch) {
+                        if (card.closest('.unlocked-content')) {
+                            if (unlockedContent.style.display === 'block') { card.style.display = 'flex'; hasVisibleCards = true; }
+                            else { card.style.display = 'none'; }
+                        } else { card.style.display = 'flex'; hasVisibleCards = true; }
+                    } else { card.style.display = 'none'; }
+                });
+
+                if (isLockedSection && unlockedContent.style.display !== 'block') {
+                    if (categoryData.includes(searchTerm) || searchTerm === "") { lockTrigger.style.display = 'flex'; hasVisibleCards = true; }
+                    else { lockTrigger.style.display = 'none'; }
+                }
+
+                if (hasVisibleCards || searchTerm === "") { section.style.display = 'block'; hasVisibleCategories = true; }
+                else { section.style.display = 'none'; }
+            });
+            noResults.style.display = hasVisibleCategories ? 'none' : 'block';
+        }
+
+        searchInput.addEventListener('input', runSearch);
+
+        document.addEventListener('click', function(e) {
+            const card = e.target.closest('.game-card:not(.locked-trigger-card)');
+            if (!card) return;
+
+            const url = card.getAttribute('data-url');
+            if (!url) return;
+
+            e.preventDefault();
+            pendingUrl = url;
+            isYoutubeCard = card.getAttribute('data-youtube') === "true";
+            
+            if (card.getAttribute('data-direct') === "true") {
+                window.open(pendingUrl, '_blank');
+                return;
+            }
+
+            targetGameName.textContent = card.querySelector('span').textContent;
+            redirectOverlay.classList.add('active');
+        });
+
+        function triggerBufferDelay(callbackAction) {
+            redirectOverlay.classList.remove('active');
+            callbackAction();
+        }
+
+        function isDirectOnlySite(rawUrl) {
+            return false;
+        }
+
+        function getYoutubeVideoId(rawUrl) {
+            try {
+                const value = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+                const parsed = new URL(value);
+                const host = parsed.hostname.toLowerCase();
+                if (host === 'youtu.be') return parsed.pathname.slice(1).split('/')[0] || '';
+                if (!host.endsWith('youtube.com')) return '';
+                if (parsed.pathname === '/watch') return parsed.searchParams.get('v') || '';
+                const parts = parsed.pathname.split('/').filter(Boolean);
+                return ['embed', 'shorts', 'live'].includes(parts[0]) ? (parts[1] || '') : '';
+            } catch { return ''; }
+        }
+
+        function officialYoutubeEmbed(rawUrl) {
+            const videoId = getYoutubeVideoId(rawUrl);
+            if (!/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) return false;
+            gameIframe.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0`;
+            iframeViewContainer.style.display = 'flex';
+            return true;
+        }
+
+        // 4. AUTOMÁTICO: tenta primeiro a sessão interna e usa nova guia como fallback.
+        methodAuto.addEventListener('click', () => {
+            triggerBufferDelay(async () => {
+                try {
+                    if (isDirectOnlySite(pendingUrl)) { window.open(pendingUrl, '_blank', 'noopener,noreferrer'); return; }
+                    const gatewayUrl = await createSecureSession(pendingUrl);
+                    gameIframe.src = gatewayUrl;
+                    iframeViewContainer.style.display = 'flex';
+                } catch (error) {
+                    window.open(pendingUrl, '_blank');
+                }
+            });
+        });
+
+        // 2. ABRIR DIRETO
+        methodDirect.addEventListener('click', () => {
+            triggerBufferDelay(() => {
+                window.open(pendingUrl, '_blank');
+            });
+        });
+
+        // 3. ABRIR EM NOVA GUIA pela sessão segura.
+        methodProxy.addEventListener('click', () => {
+            triggerBufferDelay(() => (isDirectOnlySite(pendingUrl)
+                ? window.open(pendingUrl, '_blank', 'noopener,noreferrer')
+                : openThroughBypassschool(pendingUrl)));
+        });
+
+        function normalizeGatewayUrl(rawGatewayUrl) {
+            const gateway = new URL(rawGatewayUrl, BYPASS_API_BASE);
+            if (gateway.origin !== new URL(BYPASS_API_BASE).origin) {
+                throw new Error('A sessão retornou um domínio não autorizado.');
+            }
+            return gateway.toString();
+        }
+
+        async function requestSessionBase(rawUrl, headers) {
+            let lastError = null;
+            for (const base of BYPASS_API_BASES) {
+                try {
+                    const sessionUrl = base + "/api/v1/sessions?url=" + encodeURIComponent(rawUrl);
+                    const response = await fetchWithTimeout(sessionUrl, { method: "GET", headers });
+                    let body;
+                    try { body = await response.json(); } catch { throw new Error('A API retornou uma resposta inválida.'); }
+                    if (!response.ok || !body.ok) throw new Error(body.error || "Não foi possível criar a sessão.");
+                    return body;
+                } catch (error) { lastError = error; }
+            }
+            throw lastError || new Error('Não foi possível alcançar as APIs disponíveis nesta rede.');
+        }
+
+        async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                return await fetch(url, { ...options, signal: controller.signal, cache: 'no-store' });
+            } catch (error) {
+                if (error && error.name === 'AbortError') throw new Error('Tempo esgotado ao conectar ao Mundim Bypass.');
+                throw new Error('Não foi possível alcançar o Mundim Bypass nesta rede.');
+            } finally { clearTimeout(timer); }
+        }
+
+        async function createSecureSession(rawUrl) {
+            const headers = { "content-type": "application/json" };
+            if (BYPASS_API_KEY) headers["x-api-key"] = BYPASS_API_KEY;
+            const body = await requestSessionBase(rawUrl, headers);
+            return normalizeGatewayUrl(body.session.gatewayUrl);
+        }
+
+        async function openThroughBypassschool(rawUrl) {
+            try {
+                const gatewayUrl = await createSecureSession(rawUrl);
+                const opened = window.open(gatewayUrl, "_blank", "noopener,noreferrer");
+                if (!opened) window.location.href = gatewayUrl;
+            } catch (error) {
+                const message = error.message || "Não foi possível alcançar o Mundim Bypass nesta rede.";
+                const useDirect = confirm(message + "\n\nDeseja abrir o endereço diretamente?");
+                if (useDirect) window.open(rawUrl, "_blank", "noopener,noreferrer");
+            }
+        }
+
+        async function openCustom(mode) {
+            const rawUrl = customUrlInput.value.trim();
+            if (!rawUrl) { customStatus.textContent = 'Digite um endereço para continuar.'; customUrlInput.focus(); return; }
+            customStatus.textContent = 'Criando sessão segura...';
+            try {
+                const normalizedCustomUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+                if (officialYoutubeEmbed(normalizedCustomUrl)) {
+                    customStatus.textContent = 'Vídeo aberto no player oficial do YouTube.';
+                    return;
+                }
+                if (isDirectOnlySite(normalizedCustomUrl)) {
+                    const opened = window.open(normalizedCustomUrl, '_blank', 'noopener,noreferrer');
+                    if (!opened) window.location.href = normalizedCustomUrl;
+                    customStatus.textContent = 'YouTube aberto diretamente.';
+                    return;
+                }
+                const gatewayUrl = await createSecureSession(rawUrl);
+                if (mode === 'inside') {
+                    gameIframe.src = gatewayUrl;
+                    iframeViewContainer.style.display = 'flex';
+                } else {
+                    const opened = window.open(gatewayUrl, '_blank', 'noopener,noreferrer');
+                    if (!opened) window.location.href = gatewayUrl;
+                }
+                customStatus.textContent = 'Sessão aberta no Arcade X.';
+            } catch (error) {
+                customStatus.textContent = error.message || 'Não foi possível alcançar o Mundim Bypass nesta rede.';
+            }
+        }
+        customInsideBtn.addEventListener('click', () => openCustom('inside'));
+        customTabBtn.addEventListener('click', () => openCustom('tab'));
+
+        // 2. ABRIR DENTRO DO SITE pela sessão segura.
+        methodIframe.addEventListener('click', () => {
+            triggerBufferDelay(async () => {
+                try {
+                    if (isDirectOnlySite(pendingUrl)) { window.open(pendingUrl, '_blank', 'noopener,noreferrer'); return; }
+                    gameIframe.src = await createSecureSession(pendingUrl);
+                    iframeViewContainer.style.display = 'flex';
+                } catch (error) {
+                    alert("Este site não pode ser carregado dentro do Arcade X: " + (error.message || "erro desconhecido"));
+                }
+            });
+        });
+
+        btnAbortRedirect.addEventListener('click', () => { redirectOverlay.classList.remove('active'); });
+        
+        btnCloseGame.addEventListener('click', () => { 
+            gameIframe.src = ""; 
+            iframeViewContainer.style.display = 'none'; 
+            if (document.fullscreenElement) document.exitFullscreen(); 
+        });
+
+        btnToggleFullscreen.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                iframeViewContainer.requestFullscreen().then(() => {
+                    iframeViewContainer.classList.add('fullscreen-active');
+                }).catch(err => console.log(`Erro ao ativar tela cheia: ${err.message}`));
+            } else {
+                document.exitFullscreen();
+            }
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                iframeViewContainer.classList.remove('fullscreen-active');
+            }
+        });
+
+        btnPanic.addEventListener('click', () => { 
+            gameIframe.src = ""; 
+            iframeViewContainer.style.display = 'none'; 
+            if (document.fullscreenElement) document.exitFullscreen(); 
+            const randomStudyUrl = panicUrls[Math.floor(Math.random() * panicUrls.length)]; 
+            window.location.href = randomStudyUrl; 
+        });
+
+        // MONITORAMENTO GLOBAL DA TECLA '0' - ATALHO DE EMERGÊNCIA VELOZ
+        document.addEventListener('keydown', function(event) {
+            // Se a tecla pressionada for '0' (tanto no teclado normal quanto no numérico)
+            if (event.key === '0' || event.code === 'Digit0' || event.code === 'Numpad0') {
+                // Executa imediatamente o clique simulado no botão de pânico
+                btnPanic.click();
+            }
+        });
+
+        lockTrigger.addEventListener('click', () => { passwordModal.classList.add('active'); secretCodeInput.focus(); });
+        function closeModal() { passwordModal.classList.remove('active'); secretCodeInput.value = ""; }
+        btnCancel.addEventListener('click', closeModal);
+
+        async function checkCode() {
+            try {
+                const response = await fetch(BYPASS_API_BASE + '/api/v1/locked-content/unlock', {
+                    method: 'POST', headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ code: secretCodeInput.value })
+                });
+                const body = await response.json();
+                if (!response.ok || !body.ok) throw new Error('Código inválido.');
+                unlockedGrid.innerHTML = body.items.map(item => `<div class="game-card" data-url="${item.url}"><span>${item.name}</span></div>`).join('');
+                lockTrigger.style.display = 'none'; unlockedContent.style.display = 'block'; closeModal(); runSearch(); applyCardAnimations();
+            } catch {
+                modalBox.classList.add('shake'); secretCodeInput.value = ""; setTimeout(() => { modalBox.classList.remove('shake'); }, 400);
+            }
+        }
+        btnConfirm.addEventListener('click', checkCode);
+        secretCodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') checkCode(); });
+        btnCloseFolder.addEventListener('click', () => { unlockedContent.style.display = 'none'; lockTrigger.style.display = 'flex'; searchInput.value = ""; runSearch(); });
+
+        const logoContainer = document.getElementById('brandLogoContainer');
+        const innerLogo = document.getElementById('brandLogo');
+        let posX = 25, posY = 25, velX = 1.2, velY = 0.9;
+        
+        function moveLogo() {
+            posX += velX; posY += velY;
+            if (posX <= 10 || posX >= (window.innerWidth - 80)) { velX = -velX; }
+            if (posY <= 10 || posY >= (window.innerHeight - 80)) { velY = -velY; }
+            logoContainer.style.left = posX + 'px'; logoContainer.style.top = posY + 'px';
+            requestAnimationFrame(moveLogo);
+        }
+        if (window.innerWidth > 900) { requestAnimationFrame(moveLogo); }
+
+        logoContainer.addEventListener('click', () => {
+            const hex = '0123456789ABCDEF'; let c1 = '#', c2 = '#';
+            for (let i = 0; i < 6; i++) { c1 += hex[Math.floor(Math.random() * 16)]; c2 += hex[Math.floor(Math.random() * 16)]; }
+            innerLogo.style.background = `linear-gradient(135deg, ${c1}, ${c2})`;
+            innerLogo.style.boxShadow = `0 0 35px ${c1}`;
+            velX = (Math.random() > 0.5 ? 1.5 : -1.5) * (Math.random() * 1.5 + 0.5);
+            velY = (Math.random() > 0.5 ? 1.5 : -1.5) * (Math.random() * 1.5 + 0.5);
+        });
+
+        applyCardAnimations();
+    </script>
+</body>
+</html>
