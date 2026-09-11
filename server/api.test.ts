@@ -44,8 +44,8 @@ describe("arcade API v1", () => {
     expect(response.status).toBe(201);
     expect(body.ok).toBe(true);
     expect(body.session.token).toMatch(/^ey/);
-    expect(body.session.gatewayUrl).toMatch(/^https:\/\/bypassgame-wzassucn\.manus\.space\//);
-    expect(body.session.websocketUrl).toMatch(/^wss:\/\/bypassgame-wzassucn\.manus\.space\//);
+    expect(body.session.gatewayUrl).toMatch(new RegExp(`^${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+    expect(body.session.websocketUrl).toMatch(new RegExp(`^ws://${baseUrl.slice("http://".length).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
     expect(body.session.heartbeatUrl).toContain("/api/v1/sessions/heartbeat");
   });
 
@@ -56,6 +56,6 @@ describe("arcade API v1", () => {
     const body = await response.json();
     expect(response.status).toBe(201);
     expect(body.ok).toBe(true);
-    expect(body.session.gatewayUrl).toMatch(/^https:\/\/bypassgame-wzassucn\.manus\.space\//);
+    expect(body.session.gatewayUrl).toMatch(new RegExp(`^${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
   });
 });

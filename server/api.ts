@@ -43,7 +43,8 @@ function setApiHeaders(req: Request, res: Response) {
 }
 
 function absoluteUrl(req: Request, path: string) {
-  const publicBase = (process.env.PUBLIC_GATEWAY_BASE_URL || "https://bypassgame-wzassucn.manus.space").replace(/\/+$/, "");
+  const configured = process.env.PUBLIC_GATEWAY_BASE_URL?.trim();
+  const publicBase = (configured || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
   return `${publicBase}${path}`;
 }
 

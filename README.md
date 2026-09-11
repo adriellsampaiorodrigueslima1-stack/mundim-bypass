@@ -25,3 +25,9 @@ pnpm build
 ```
 
 Não publique arquivos `.env`, chaves, tokens ou credenciais. O gateway mantém HTTPS obrigatório, bloqueio de redes privadas e validação de hosts para evitar SSRF.
+
+## Implantação independente no Render
+
+O arquivo `render.yaml` configura um serviço Node.js que serve a interface, a API REST e o WebSocket no mesmo domínio. No Render, escolha **New Blueprint**, conecte este repositório e defina `PUBLIC_GATEWAY_BASE_URL` com a URL HTTPS do serviço depois que ele for criado. `JWT_SECRET` é gerado pelo Render; `ARCADE_CORS_ORIGINS` pode receber a origem autorizada do launcher e `ARCADE_API_KEYS` é opcional.
+
+O serviço independente usa `server/standalone.ts`, não depende do entrypoint Manus e inicia com `pnpm run start:standalone`. O endpoint de saúde é `/api/v1/health`.
