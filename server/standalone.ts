@@ -19,6 +19,7 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 registerGatewayWebSockets(server);
 registerArcadeApi(app);
 registerGatewayRoutes(app);
+app.get("/ArcadeX.html", (_req, res) => res.sendFile(path.resolve(process.cwd(), "ArcadeX.html")));
 app.use(express.static(publicDir, { index: "index.html", redirect: false }));
 app.get("*", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
 
