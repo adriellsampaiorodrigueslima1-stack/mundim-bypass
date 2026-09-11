@@ -24,7 +24,6 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { trpc } from "@/lib/trpc";
 
 const savedTargets = [
   { name: "Krunker", url: "https://krunker.io", tag: "FPS" },
@@ -66,30 +65,44 @@ function Home() {
     }
   };
 
-  const createSession = trpc.gateway.createSession.useMutation({
-    onSuccess: (session) => {
+  const createSession = async (rawTarget: string) => {
+    const response = await fetch(`/api/v1/sessions?url=${encodeURIComponent(rawTarget)}`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(12_000),
+    });
+    const contentType = response.headers.get("content-type") || "";
+    const body = contentType.includes("application/json") ? await response.json() : null;
+    if (!response.ok || !body?.ok) {
+      throw new Error(body?.error || "A API do gateway não retornou uma sessão válida.");
+    }
+    return body.session as { gatewayUrl: string };
+  };
+
+  const openSession = async (rawTarget: string) => {
+    try {
+      const session = await createSession(rawTarget);
       clearLaunchTimeout();
       setGatewayUrl(session.gatewayUrl);
       setStatus("opened");
       const absoluteGatewayUrl = new URL(session.gatewayUrl, window.location.origin).href;
       const tab = window.__bypassschoolPendingTab;
-      if (tab && !tab.closed) {
-        tab.location.href = absoluteGatewayUrl;
-      } else {
+      if (tab && !tab.closed) tab.location.href = absoluteGatewayUrl;
+      else {
         const opened = window.open(absoluteGatewayUrl, "_blank", "noopener,noreferrer");
         if (!opened) window.location.assign(absoluteGatewayUrl);
       }
       window.__bypassschoolPendingTab = null;
-    },
-    onError: (error) => {
+    } catch (error) {
       clearLaunchTimeout();
-      setErrorMessage(error.message);
+      setErrorMessage(error instanceof Error ? error.message : "Não foi possível criar a sessão.");
       setStatus("error");
       const tab = window.__bypassschoolPendingTab;
       if (tab && !tab.closed) tab.close();
       window.__bypassschoolPendingTab = null;
-    },
-  });
+    }
+  };
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -122,7 +135,6 @@ function Home() {
     window.__bypassschoolPendingTab = window.open("about:blank", "_blank");
     if (window.__bypassschoolPendingTab) window.__bypassschoolPendingTab.opener = null;
     launchTimeoutRef.current = window.setTimeout(() => {
-      createSession.reset();
       const tab = window.__bypassschoolPendingTab;
       if (tab && !tab.closed) tab.close();
       window.__bypassschoolPendingTab = null;
@@ -130,7 +142,7 @@ function Home() {
       setErrorMessage("O gateway demorou para responder. Tente novamente.");
       launchTimeoutRef.current = null;
     }, 12000);
-    createSession.mutate({ target });
+    void openSession(target);
   };
 
   const runLatencyCheck = () => {
