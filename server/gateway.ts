@@ -8,6 +8,8 @@ import { ENV } from "./_core/env";
 
 const SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const SESSION_MAX_TTL_MS = 24 * 60 * 60 * 1000;
+const UPSTREAM_TIMEOUT_MS = 30_000;
+const RETRYABLE_METHODS = new Set(["GET", "HEAD"]);
 const activeSessions = new Map<string, number>();
 const closedSessions = new Set<string>();
 
@@ -304,9 +306,41 @@ function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
   res.setHeader("x-content-type-options", "nosniff");
 }
 
+function applyGatewayCors(req: Request, res: Response) {
+  const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+  const configured = (process.env.ARCADE_CORS_ORIGINS || "")
+    .split(",")
+    .map(value => value.trim())
+    .filter(Boolean);
+  const allowed = requestOrigin && (configured.includes("*") || configured.includes(requestOrigin));
+  if (allowed) {
+    res.setHeader("access-control-allow-origin", requestOrigin);
+    res.setHeader("access-control-allow-credentials", "true");
+    res.setHeader("vary", "Origin");
+  }
+  res.setHeader("access-control-allow-methods", "GET,HEAD,POST,PUT,PATCH,OPTIONS");
+  res.setHeader("access-control-allow-headers", "Content-Type, Range, If-None-Match, If-Modified-Since, X-Requested-With");
+}
+
+async function fetchUpstream(url: URL, init: RequestInit, method: string) {
+  const attempts = RETRYABLE_METHODS.has(method) ? 2 : 1;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+    } catch (error) {
+      lastError = error;
+      if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Falha ao conectar ao destino.");
+}
+
 async function handleGatewayRequest(req: Request, res: Response) {
   const token = req.params.token;
   try {
+    applyGatewayCors(req, res);
+    if (req.method === "OPTIONS") return res.status(204).end();
     const claims = await readGatewayToken(token);
     const upstreamUrl = getUpstreamUrl(req, claims);
     // O origin já foi validado ao criar o token. Revalidar DNS em cada asset
@@ -319,13 +353,12 @@ async function handleGatewayRequest(req: Request, res: Response) {
 
     const method = req.method.toUpperCase();
     const hasBody = !["GET", "HEAD"].includes(method);
-    const requestBody = hasBody && req.body !== undefined
-      ? (typeof req.body === "string" ? req.body : JSON.stringify(req.body))
+    const requestBody: any = hasBody && req.body !== undefined
+      ? (Buffer.isBuffer(req.body) || typeof req.body === "string" ? req.body : JSON.stringify(req.body))
       : undefined;
-    const upstream = await fetch(upstreamUrl, {
+    const upstream = await fetchUpstream(upstreamUrl, {
       method,
       redirect: "manual",
-      signal: AbortSignal.timeout(15_000),
       headers: {
         accept: req.headers.accept || "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "accept-language": req.headers["accept-language"] || "pt-BR,pt;q=0.9,en;q=0.8",
@@ -339,7 +372,7 @@ async function handleGatewayRequest(req: Request, res: Response) {
         ...(req.headers["if-modified-since"] ? { "if-modified-since": req.headers["if-modified-since"] } : {}),
       },
       body: requestBody,
-    });
+    }, method);
 
     if (upstream.status >= 300 && upstream.status < 400) {
       const location = upstream.headers.get("location");

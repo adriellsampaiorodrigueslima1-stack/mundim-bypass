@@ -51,11 +51,17 @@ export function registerGatewayWebSockets(server: Server) {
             origin: claims.origin,
             ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
             ...(request.headers.referer ? { referer: request.headers.referer } : {}),
-            "user-agent": "bypassschool-authorized-gateway/0.3",
+            "user-agent": request.headers["user-agent"] || "Mundim-Bypass-Gateway/1.0",
           },
         });
 
+        const keepAlive = setInterval(() => {
+          if (client.readyState === WebSocket.OPEN) client.ping();
+          if (upstream.readyState === WebSocket.OPEN) upstream.ping();
+        }, 25_000);
+
         const closeBoth = (code = 1000, reason = "") => {
+          clearInterval(keepAlive);
           if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) client.close(code, reason);
           if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) upstream.close(code, reason);
         };
