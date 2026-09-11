@@ -130,12 +130,12 @@ export async function closeGatewaySession(token: string) {
 
 function gatewayPath(token: string, target: URL) {
   const suffix = `${target.pathname || "/"}${target.search}`;
-  return `/gateway/${token}${suffix === "/" ? "/" : suffix}`;
+  return `/gateway/${encodeURIComponent(token)}${suffix === "/" ? "/" : suffix}`;
 }
 
 function gatewayHostPath(token: string, target: URL, sessionOrigin: string) {
   if (target.origin === sessionOrigin) return gatewayPath(token, target);
-  return `/gateway/${token}/__host/${encodeURIComponent(target.host)}${target.pathname || "/"}${target.search}`;
+  return `/gateway/${encodeURIComponent(token)}/__host/${encodeURIComponent(target.host)}${target.pathname || "/"}${target.search}`;
 }
 
 function isRelatedGameHost(sessionOrigin: string, target: URL) {
@@ -195,7 +195,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
         const relatedSubdomain = (site === 'bloxd.io' && (parsed.hostname === 'bloxd.io' || parsed.hostname.endsWith('.bloxd.io'))) || relatedHost(parsed.hostname);
         if (!sameOrigin && !relatedSubdomain) return null;
         const hostPrefix = sameOrigin ? '' : '/__host/' + encodeURIComponent(parsed.host);
-        return location.origin + '/gateway/' + token + hostPrefix + parsed.pathname + parsed.search;
+        return location.origin + '/gateway/' + encodeURIComponent(token) + hostPrefix + parsed.pathname + parsed.search;
       } catch { return null; }
     };
     const NativeFetch = window.fetch.bind(window);
@@ -227,7 +227,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
         if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
           const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
           const encodedHost = encodeURIComponent(parsed.host);
-          const proxied = protocol + '//' + location.host + '/gateway-ws/' + token + '/__host/' + encodedHost + parsed.pathname + parsed.search;
+          const proxied = protocol + '//' + location.host + '/gateway-ws/' + encodeURIComponent(token) + '/__host/' + encodedHost + parsed.pathname + parsed.search;
           return protocols === undefined ? new NativeWebSocket(proxied) : new NativeWebSocket(proxied, protocols);
         }
       } catch {}

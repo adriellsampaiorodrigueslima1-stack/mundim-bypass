@@ -84,8 +84,9 @@ export function registerArcadeApi(app: Express) {
       if (!rawTarget) return res.status(400).json({ ok: false, error: "Campo 'url' é obrigatório." });
       const target = await parseAllowedTarget(rawTarget);
       const token = await createGatewayToken(target);
-      const gatewayPath = `/gateway/${token}${target.pathname === "/" ? "/" : `${target.pathname}${target.search}`}`;
-      const websocketPath = `/gateway-ws/${token}/`;
+      const encodedToken = encodeURIComponent(token);
+      const gatewayPath = `/gateway/${encodedToken}${target.pathname === "/" ? "/" : `${target.pathname}${target.search}`}`;
+      const websocketPath = `/gateway-ws/${encodedToken}/`;
       return res.status(201).json({
         ok: true,
         session: {

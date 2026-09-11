@@ -33,7 +33,7 @@ export function registerGatewayWebSockets(server: Server) {
     const match = pathname.match(/^\/gateway-ws\/([^/]+)(\/.*)?$/);
     if (!match) return;
 
-    const token = match[1];
+    const token = decodeURIComponent(match[1]);
     try {
       const claims = await readGatewayToken(token);
       const upstreamHttps = websocketTarget(request, token, claims.origin);
