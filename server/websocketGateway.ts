@@ -21,6 +21,12 @@ function websocketTarget(request: IncomingMessage, token: string, claimsOrigin: 
   return upstream;
 }
 
+function isAllowedWebSocketHost(origin: string, target: URL) {
+  const host = new URL(origin).hostname;
+  return target.hostname === host || target.hostname.endsWith(`.${host}`) ||
+    (host === "2v2.io" && ["files.2v2.io", "api.2v2.io"].includes(target.hostname));
+}
+
 export function registerGatewayWebSockets(server: Server) {
   server.on("upgrade", async (request, socket, head) => {
     const pathname = new URL(request.url || "/", "http://gateway.local").pathname;
@@ -32,6 +38,7 @@ export function registerGatewayWebSockets(server: Server) {
       const claims = await readGatewayToken(token);
       const upstreamHttps = websocketTarget(request, token, claims.origin);
       await assertPublicHttpsTarget(upstreamHttps);
+      if (!isAllowedWebSocketHost(claims.origin, upstreamHttps)) throw new Error("WebSocket fora do host autorizado.");
       const upstreamUrl = upstreamHttps.toString().replace(/^https:/, "wss:");
       const protocolHeader = request.headers["sec-websocket-protocol"];
       const protocols = typeof protocolHeader === "string"

@@ -143,6 +143,12 @@ function isRelatedGameHost(sessionOrigin: string, target: URL) {
   return sessionHost === "2v2.io" && (target.hostname === "files.2v2.io" || target.hostname === "api.2v2.io");
 }
 
+function assertSessionHostAllowed(claimsOrigin: string, target: URL) {
+  if (!isRelatedGameHost(claimsOrigin, target)) {
+    throw new Error("O recurso está fora dos hosts autorizados da sessão.");
+  }
+}
+
 function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
   const attributePattern = /(src|href|action|poster)=("|')([^"']+)(\2)/gi;
   const rewritten = html.replace(attributePattern, (full, attribute: string, quote: string, value: string) => {
@@ -179,6 +185,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     const gatewayHttpUrl = (value) => {
       try {
         const raw = String(value);
+        if (raw.startsWith('/api/gateway') || raw.startsWith('/gateway')) return null;
         const base = raw.startsWith('/') || raw.startsWith('?') || raw.startsWith('#') ? siteOrigin : document.baseURI;
         const parsed = new URL(raw, base);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
@@ -283,7 +290,7 @@ function getUpstreamUrl(req: Request, claims: GatewayClaims) {
 }
 
 function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
-  for (const name of ["content-type", "cache-control", "etag", "last-modified"]) {
+  for (const name of ["content-type", "cache-control", "etag", "last-modified", "content-range", "accept-ranges", "vary"]) {
     const value = upstream.headers.get(name);
     if (value) res.setHeader(name, value);
   }
@@ -305,7 +312,10 @@ async function handleGatewayRequest(req: Request, res: Response) {
     // O origin já foi validado ao criar o token. Revalidar DNS em cada asset
     // torna jogos com muitos scripts/imagens lentos e não acrescenta proteção
     // quando o recurso permanece no mesmo origin autorizado.
-    if (upstreamUrl.origin !== claims.origin) await assertPublicHttpsTarget(upstreamUrl);
+    if (upstreamUrl.origin !== claims.origin) {
+      await assertPublicHttpsTarget(upstreamUrl);
+      assertSessionHostAllowed(claims.origin, upstreamUrl);
+    }
 
     const method = req.method.toUpperCase();
     const hasBody = !["GET", "HEAD"].includes(method);
@@ -324,6 +334,9 @@ async function handleGatewayRequest(req: Request, res: Response) {
         ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
         ...(req.headers.referer ? { referer: req.headers.referer } : {}),
         ...(req.headers["content-type"] ? { "content-type": req.headers["content-type"] } : {}),
+        ...(req.headers.range ? { range: req.headers.range } : {}),
+        ...(req.headers["if-none-match"] ? { "if-none-match": req.headers["if-none-match"] } : {}),
+        ...(req.headers["if-modified-since"] ? { "if-modified-since": req.headers["if-modified-since"] } : {}),
       },
       body: requestBody,
     });
@@ -333,6 +346,7 @@ async function handleGatewayRequest(req: Request, res: Response) {
       if (!location) return res.status(upstream.status).end();
       const redirectTarget = new URL(location, upstreamUrl);
       await assertPublicHttpsTarget(redirectTarget);
+      assertSessionHostAllowed(claims.origin, redirectTarget);
       res.setHeader("location", gatewayPath(token, redirectTarget));
       return res.status(upstream.status).end();
     }
