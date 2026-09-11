@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { Express, Request, Response } from "express";
-import { closeGatewaySession, createGatewayToken, parseAllowedTarget, heartbeatGatewaySession } from "./gateway";
+import { closeGatewaySession, createGatewayToken, encodeGatewayTokenForPath, parseAllowedTarget, heartbeatGatewaySession } from "./gateway";
 
 function configuredKeys() {
   return (process.env.ARCADE_API_KEYS || "")
@@ -84,7 +84,7 @@ export function registerArcadeApi(app: Express) {
       if (!rawTarget) return res.status(400).json({ ok: false, error: "Campo 'url' é obrigatório." });
       const target = await parseAllowedTarget(rawTarget);
       const token = await createGatewayToken(target);
-      const encodedToken = encodeURIComponent(token);
+      const encodedToken = encodeGatewayTokenForPath(token);
       const gatewayPath = `/gateway/${encodedToken}${target.pathname === "/" ? "/" : `${target.pathname}${target.search}`}`;
       const websocketPath = `/gateway-ws/${encodedToken}/`;
       return res.status(201).json({

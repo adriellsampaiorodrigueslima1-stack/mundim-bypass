@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import type { Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
-import { readGatewayToken, assertPublicHttpsTarget } from "./gateway";
+import { readGatewayToken, assertPublicHttpsTarget, decodeGatewayTokenFromPath } from "./gateway";
 
 const websocketServer = new WebSocketServer({ noServer: true });
 
@@ -33,7 +33,7 @@ export function registerGatewayWebSockets(server: Server) {
     const match = pathname.match(/^\/gateway-ws\/([^/]+)(\/.*)?$/);
     if (!match) return;
 
-    const token = decodeURIComponent(match[1]);
+    const token = decodeGatewayTokenFromPath(decodeURIComponent(match[1]));
     try {
       const claims = await readGatewayToken(token);
       const upstreamHttps = websocketTarget(request, token, claims.origin);

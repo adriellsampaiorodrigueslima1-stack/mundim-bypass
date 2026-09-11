@@ -20,6 +20,17 @@ export type GatewayClaims = {
   exp: number;
 };
 
+// Compact JWE tokens contain dots. Replace them in URL path segments because
+// browsers and reverse proxies may normalize dot segments before Express sees
+// the request. Tilde is URL-safe and is not meaningful to path normalization.
+export function encodeGatewayTokenForPath(token: string) {
+  return token.replace(/\./g, "~");
+}
+
+export function decodeGatewayTokenFromPath(token: string) {
+  return token.replace(/~/g, ".");
+}
+
 export function getAllowedOrigins() {
   return ["https://* (qualquer destino público) "];
 }
@@ -130,12 +141,12 @@ export async function closeGatewaySession(token: string) {
 
 function gatewayPath(token: string, target: URL) {
   const suffix = `${target.pathname || "/"}${target.search}`;
-  return `/gateway/${encodeURIComponent(token)}${suffix === "/" ? "/" : suffix}`;
+  return `/gateway/${encodeGatewayTokenForPath(token)}${suffix === "/" ? "/" : suffix}`;
 }
 
 function gatewayHostPath(token: string, target: URL, sessionOrigin: string) {
   if (target.origin === sessionOrigin) return gatewayPath(token, target);
-  return `/gateway/${encodeURIComponent(token)}/__host/${encodeURIComponent(target.host)}${target.pathname || "/"}${target.search}`;
+  return `/gateway/${encodeGatewayTokenForPath(token)}/__host/${encodeURIComponent(target.host)}${target.pathname || "/"}${target.search}`;
 }
 
 function isRelatedGameHost(sessionOrigin: string, target: URL) {
@@ -166,7 +177,7 @@ function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
   if (new URL(upstreamUrl).hostname === "2v2.io") {
     return rewritten.replace(/https:\/\/(?:files|api)\.2v2\.io(?=\/|['"`\s])/g, (absolute) => {
       const host = absolute.slice("https://".length);
-      return `/gateway/${token}/__host/${host}`;
+        return `/gateway/${encodeGatewayTokenForPath(token)}/__host/${host}`;
     });
   }
   return rewritten;
@@ -195,7 +206,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
         const relatedSubdomain = (site === 'bloxd.io' && (parsed.hostname === 'bloxd.io' || parsed.hostname.endsWith('.bloxd.io'))) || relatedHost(parsed.hostname);
         if (!sameOrigin && !relatedSubdomain) return null;
         const hostPrefix = sameOrigin ? '' : '/__host/' + encodeURIComponent(parsed.host);
-        return location.origin + '/gateway/' + encodeURIComponent(token) + hostPrefix + parsed.pathname + parsed.search;
+        return location.origin + '/gateway/' + encodeGatewayTokenForPath(token) + hostPrefix + parsed.pathname + parsed.search;
       } catch { return null; }
     };
     const NativeFetch = window.fetch.bind(window);
@@ -227,7 +238,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
         if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
           const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
           const encodedHost = encodeURIComponent(parsed.host);
-          const proxied = protocol + '//' + location.host + '/gateway-ws/' + encodeURIComponent(token) + '/__host/' + encodedHost + parsed.pathname + parsed.search;
+          const proxied = protocol + '//' + location.host + '/gateway-ws/' + encodeGatewayTokenForPath(token) + '/__host/' + encodedHost + parsed.pathname + parsed.search;
           return protocols === undefined ? new NativeWebSocket(proxied) : new NativeWebSocket(proxied, protocols);
         }
       } catch {}
@@ -337,7 +348,7 @@ async function fetchUpstream(url: URL, init: RequestInit, method: string) {
 }
 
 async function handleGatewayRequest(req: Request, res: Response) {
-  const token = req.params.token;
+  const token = decodeGatewayTokenFromPath(req.params.token);
   try {
     applyGatewayCors(req, res);
     if (req.method === "OPTIONS") return res.status(204).end();
