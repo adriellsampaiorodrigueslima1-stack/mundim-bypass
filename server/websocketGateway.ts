@@ -5,9 +5,9 @@ import { readGatewayToken, assertPublicHttpsTarget, decodeGatewayTokenFromPath }
 
 const websocketServer = new WebSocketServer({ noServer: true });
 
-function websocketTarget(request: IncomingMessage, token: string, claimsOrigin: string) {
+function websocketTarget(request: IncomingMessage, routePath: string, claimsOrigin: string) {
   const requestUrl = new URL(request.url || "/", "http://gateway.local");
-  const rawPath = requestUrl.pathname || "/";
+  const rawPath = routePath || "/";
   const hostMarker = "/__host/";
   if (rawPath.startsWith(hostMarker)) {
     const encodedHostAndPath = rawPath.slice(hostMarker.length);
@@ -36,7 +36,7 @@ export function registerGatewayWebSockets(server: Server) {
     const token = decodeGatewayTokenFromPath(decodeURIComponent(match[1]));
     try {
       const claims = await readGatewayToken(token);
-      const upstreamHttps = websocketTarget(request, token, claims.origin);
+      const upstreamHttps = websocketTarget(request, match[2] || "/", claims.origin);
       await assertPublicHttpsTarget(upstreamHttps);
       if (!isAllowedWebSocketHost(claims.origin, upstreamHttps)) throw new Error("WebSocket fora do host autorizado.");
       const upstreamUrl = upstreamHttps.toString().replace(/^https:/, "wss:");
