@@ -420,9 +420,6 @@ function getRequestProtocol(req: Request) {
   return (typeof forwarded === "string" ? forwarded.split(",")[0].trim() : req.protocol) || "https";
 }
 
-function getProxyOrigin(req: Request) {
-  return getRequestProtocol(req) + "://" + (req.get("host") || "");
-}
 
 function proxyGatewayPrefix(token: string) {
   return "/gateway/" + encodeGatewayTokenForPath(token);
@@ -482,6 +479,8 @@ function copyResponseHeaders(upstream: globalThis.Response, res: Response, req: 
     const value = upstream.headers.get(name);
     if (value) res.setHeader(name, value);
   }
+
+  for (const name of HOP_BY_HOP_HEADERS) res.removeHeader(name);
 
   // Nunca repasse políticas do site remoto que impeçam a página proxied.
   for (const name of [
