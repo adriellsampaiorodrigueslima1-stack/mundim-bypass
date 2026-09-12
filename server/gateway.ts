@@ -29,6 +29,10 @@ export function decodeGatewayTokenFromPath(token: string) {
   return token.replace(/~/g, ".");
 }
 
+export function getAllowedOrigins() {
+  return ["https://* (qualquer destino público)"];
+}
+
 function isBlockedAddress(address: string) {
   if (net.isIPv4(address)) {
     const [a, b] = address.split(".").map(Number);
@@ -47,7 +51,6 @@ function isBlockedAddress(address: string) {
   return true;
 }
 
-// Protege contra ataques SSRF (bloqueia redes internas, localhost e IPs privados)
 export async function assertPublicHttpsTarget(target: URL) {
   if (target.protocol !== "https:") throw new Error("O gateway aceita somente destinos HTTPS.");
   if (target.username || target.password) throw new Error("URLs com credenciais não são permitidas.");
@@ -144,17 +147,54 @@ function gatewayHostPath(token: string, target: URL, sessionOrigin: string) {
   return `/gateway/${encodeGatewayTokenForPath(token)}/__host/${encodeURIComponent(target.host)}${target.pathname || "/"}${target.search}`;
 }
 
+function isRelatedGameHost(sessionOrigin: string, target: URL) {
+  const sessionHost = new URL(sessionOrigin).hostname;
+  if (target.protocol !== "https:") return false;
+  if (target.hostname === sessionHost || target.hostname.endsWith(`.${sessionHost}`)) return true;
+  if (sessionHost === "2v2.io" && (target.hostname === "files.2v2.io" || target.hostname === "api.2v2.io")) return true;
+  if (sessionHost === "bloxd.io" && (
+    target.hostname === "static.bloxd.io" ||
+    target.hostname === "static2.bloxd.io" ||
+    target.hostname === "staging.bloxd.io" ||
+    target.hostname.endsWith(".bloxd.io")
+  )) return true;
+  return false;
+}
+
+function assertSessionHostAllowed(claimsOrigin: string, target: URL) {
+  if (!isRelatedGameHost(claimsOrigin, target)) {
+    throw new Error("O recurso está fora dos hosts autorizados da sessão.");
+  }
+}
+
 function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
   const attributePattern = /(src|href|action|poster)=("|')([^"']+)(\2)/gi;
-  return html.replace(attributePattern, (full, attribute: string, quote: string, value: string) => {
+  const rewritten = html.replace(attributePattern, (full, attribute: string, quote: string, value: string) => {
     if (/^(#|data:|mailto:|javascript:|blob:|about:)/i.test(value)) return full;
     try {
       const resolved = new URL(value, upstreamUrl);
+      if (!isRelatedGameHost(upstreamUrl.origin, resolved)) return full;
       return `${attribute}=${quote}${gatewayHostPath(token, resolved, upstreamUrl.origin)}${quote}`;
     } catch {
       return full;
     }
   });
+
+  if (new URL(upstreamUrl).hostname === "2v2.io") {
+    return rewritten.replace(/https:\/\/(?:files|api)\.2v2\.io(?=\/|['"`\s])/g, (absolute) => {
+      const host = absolute.slice("https://".length);
+      return `/gateway/${encodeGatewayTokenForPath(token)}/__host/${host}`;
+    });
+  }
+
+  if (new URL(upstreamUrl).hostname === "bloxd.io") {
+    return rewritten.replace(/https:\/\/(?:static|static2|staging)\.bloxd\.io(?=\/|['"`\s])/g, (absolute) => {
+      const host = absolute.slice("https://".length);
+      return `/gateway/${encodeGatewayTokenForPath(token)}/__host/${host}`;
+    });
+  }
+
+  return rewritten;
 }
 
 function rewriteDynamicModuleBase(source: string, token: string) {
@@ -171,6 +211,8 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     const pathToken = ${safePathToken};
     const site = ${safeSite};
     const siteOrigin = 'https://' + site;
+    const relatedHost = (hostname) => (site === '2v2.io' && (hostname === 'files.2v2.io' || hostname === 'api.2v2.io')) ||
+      (site === 'bloxd.io' && (hostname === 'static.bloxd.io' || hostname === 'static2.bloxd.io' || hostname === 'staging.bloxd.io' || hostname.endsWith('.bloxd.io')));
 
     const gatewayHttpUrl = (value) => {
       try {
@@ -180,6 +222,8 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
         const parsed = new URL(raw, base);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
         const sameOrigin = parsed.origin === siteOrigin;
+        const relatedSubdomain = (site === 'bloxd.io' && (parsed.hostname === 'bloxd.io' || parsed.hostname.endsWith('.bloxd.io'))) || relatedHost(parsed.hostname);
+        if (!sameOrigin && !relatedSubdomain) return null;
         const hostPrefix = sameOrigin ? '' : '/__host/' + encodeURIComponent(parsed.host);
         return location.origin + '/gateway/' + pathToken + hostPrefix + parsed.pathname + parsed.search;
       } catch { return null; }
@@ -205,7 +249,6 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
       if (record.type === 'attributes') rewriteElementUrl(record.target);
     })).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'href', 'action', 'poster'] });
 
-    // Intercepta fetch
     const NativeFetch = window.fetch.bind(window);
     window.fetch = function(input, init) {
       const original = input instanceof Request ? input.url : String(input);
@@ -215,7 +258,6 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
       return NativeFetch(rewritten, init);
     };
 
-    // Intercepta XMLHttpRequest
     const NativeXHR = window.XMLHttpRequest;
     const GatewayXHR = function() {
       const xhr = new NativeXHR();
@@ -229,7 +271,6 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     GatewayXHR.prototype = NativeXHR.prototype;
     window.XMLHttpRequest = GatewayXHR;
 
-    // Intercepta WebSockets para tunelar multiplayer (Bloxd.io)
     const NativeWebSocket = window.WebSocket;
     const GatewayWebSocket = function(url, protocols) {
       try {
@@ -238,7 +279,8 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
         const parsed = new URL(raw, raw.startsWith('/') ? wsBase : document.baseURI);
         if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
           const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-          const proxied = protocol + '//' + location.host + '/ws-gateway?target=' + encodeURIComponent(parsed.href);
+          const encodedHost = encodeURIComponent(parsed.host);
+          const proxied = protocol + '//' + location.host + '/gateway-ws/' + encodeGatewayTokenForPath(token) + '/__host/' + encodedHost + parsed.pathname + parsed.search;
           return protocols === undefined ? new NativeWebSocket(proxied) : new NativeWebSocket(proxied, protocols);
         }
       } catch {}
@@ -247,7 +289,6 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     GatewayWebSocket.prototype = NativeWebSocket.prototype;
     window.WebSocket = GatewayWebSocket;
 
-    // UI: Loader e Watermark
     const style = document.createElement('style');
     style.textContent = '@keyframes bsSpin { to { transform: rotate(360deg); } } @keyframes bsPulse { 0%,100% { opacity:.5; } 50% { opacity:.9; } } @keyframes bsIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } } #bypassschool-loader { position:fixed; inset:0; z-index:2147483646; display:grid; place-items:center; background:radial-gradient(circle at 50% 42%, #102642 0%, #050912 56%, #02040a 100%); color:#eaf7ff; font-family:system-ui,-apple-system,sans-serif; transition:opacity .42s ease, visibility .42s ease; } #bypassschool-loader.bs-ready { opacity:0; visibility:hidden; pointer-events:none; } .bs-loader-box { text-align:center; animation:bsIn .55s ease both; } .bs-loader-ring { width:58px; height:58px; margin:0 auto 20px; border:2px solid rgba(57,196,255,.2); border-top-color:#36c6ff; border-right-color:#8ef0ff; border-radius:50%; animation:bsSpin 1s linear infinite; box-shadow:0 0 26px rgba(35,184,255,.26); } .bs-loader-title { letter-spacing:.12em; text-transform:lowercase; font-size:14px; font-weight:600; } .bs-loader-sub { margin-top:9px; color:#80a3b9; font-size:11px; } #bypassschool-watermark { position:fixed; top:9px; right:12px; z-index:2147483645; display:flex; align-items:center; gap:5px; padding:4px 7px; border:1px solid rgba(74,191,239,.2); border-radius:5px; background:rgba(3,12,24,.68); box-shadow:0 3px 12px rgba(0,0,0,.16); color:#a9c8d8; font:9px ui-monospace,SFMono-Regular,monospace; backdrop-filter:blur(7px); animation:bsPulse 3.4s ease-in-out infinite; } .bs-watermark-name { color:#49c8ff; font-weight:700; } .bs-watermark-sep { color:#52798f; } #bypassschool-emergency { border:0; border-radius:3px; padding:2px 5px; background:#d92d3f; color:#fff; font:700 8px ui-monospace,monospace; cursor:pointer; pointer-events:auto; } #bypassschool-emergency:hover { background:#ff4658; }';
     document.head.appendChild(style);
@@ -271,17 +312,41 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
       window.stop();
       window.location.replace(emergencyTargets[Math.floor(Math.random() * emergencyTargets.length)]);
     };
-    document.getElementById('bypassschool-emergency').addEventListener('click', emergency);
+
+    const emergencyBtn = document.getElementById('bypassschool-emergency');
+    if (emergencyBtn) emergencyBtn.addEventListener('click', emergency);
     window.addEventListener('keydown', (event) => { if (event.key === '0') emergency(); });
 
-    const dismissLoader = () => { loader.classList.add('bs-ready'); window.setTimeout(() => loader.remove(), 500); };
-    if (document.readyState === 'complete') dismissLoader(); else window.addEventListener('load', dismissLoader, { once: true });
-    window.setTimeout(dismissLoader, 7000);
+    // Encerramento seguro do loader (remove da tela sem travar)
+    const dismissLoader = () => {
+      try {
+        if (loader) {
+          loader.classList.add('bs-ready');
+          setTimeout(() => {
+            if (loader.parentNode) loader.parentNode.removeChild(loader);
+          }, 350);
+        }
+      } catch {}
+    };
+
+    if (document.readyState === 'complete') {
+      dismissLoader();
+    } else {
+      window.addEventListener('load', dismissLoader, { once: true });
+      document.addEventListener('DOMContentLoaded', dismissLoader, { once: true });
+    }
+    // Timeout máximo para garantir que a tela destrave mesmo se algum asset demorar
+    setTimeout(dismissLoader, 3000);
 
     const beat = async () => {
       const started = performance.now();
       try {
-        await fetch('/api/gateway/heartbeat', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ token }), keepalive:true });
+        await fetch('/api/gateway/heartbeat', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ token }),
+          keepalive: true,
+        });
         const ping = document.getElementById('bypassschool-ping');
         if (ping) ping.textContent = Math.round(performance.now() - started) + 'ms';
       } catch {}
@@ -290,7 +355,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     window.setInterval(beat, 30000);
 
     window.addEventListener('pagehide', () => {
-      navigator.sendBeacon('/api/gateway/close', new Blob([JSON.stringify({ token })], { type:'application/json' }));
+      navigator.sendBeacon('/api/gateway/close', new Blob([JSON.stringify({ token })], { type: 'application/json' }));
     });
   })();</script>`;
 }
@@ -309,9 +374,8 @@ function getUpstreamUrl(req: Request, claims: GatewayClaims) {
   if (requestPath.startsWith(marker)) {
     const encodedHostAndPath = requestPath.slice(marker.length);
     const slashIndex = encodedHostAndPath.indexOf("/");
-    if (slashIndex <= 0) throw new Error("Destino de recurso inválido.");
-    const host = decodeURIComponent(encodedHostAndPath.slice(0, slashIndex));
-    const path = encodedHostAndPath.slice(slashIndex) || "/";
+    const host = decodeURIComponent(slashIndex > 0 ? encodedHostAndPath.slice(0, slashIndex) : encodedHostAndPath);
+    const path = slashIndex > 0 ? (encodedHostAndPath.slice(slashIndex) || "/") : "/";
     return new URL(`${path}`, `https://${host}`);
   }
   return new URL(requestPath, claims.origin);
@@ -323,15 +387,11 @@ function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
     if (value) res.setHeader(name, value);
   }
 
-  // Remove políticas que impedem execução em iframes e scripts de terceiros
+  // Remove restrições que bloqueiam iframes
   res.removeHeader("content-security-policy");
   res.removeHeader("content-security-policy-report-only");
   res.removeHeader("x-frame-options");
-  res.removeHeader("cross-origin-opener-policy");
-  res.removeHeader("cross-origin-embedder-policy");
-  res.removeHeader("cross-origin-resource-policy");
 
-  // Reescreve cookies com SameSite=None; Secure para manter sessões
   const setCookies = typeof upstream.headers.getSetCookie === "function"
     ? upstream.headers.getSetCookie()
     : (upstream.headers.get("set-cookie") ? [upstream.headers.get("set-cookie") as string] : []);
@@ -349,12 +409,16 @@ function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
 }
 
 function applyGatewayCors(req: Request, res: Response) {
-  const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : "*";
-  res.setHeader("access-control-allow-origin", requestOrigin);
-  res.setHeader("access-control-allow-credentials", "true");
-  res.setHeader("access-control-allow-methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
-  res.setHeader("access-control-allow-headers", "*");
-  res.setHeader("access-control-expose-headers", "*");
+  const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+  if (requestOrigin) {
+    res.setHeader("access-control-allow-origin", requestOrigin);
+    res.setHeader("access-control-allow-credentials", "true");
+    res.setHeader("vary", "Origin");
+  } else {
+    res.setHeader("access-control-allow-origin", "*");
+  }
+  res.setHeader("access-control-allow-methods", "GET,HEAD,POST,PUT,PATCH,OPTIONS");
+  res.setHeader("access-control-allow-headers", "Content-Type, Range, If-None-Match, If-Modified-Since, X-Requested-With");
 }
 
 async function fetchUpstream(url: URL, init: RequestInit, method: string) {
@@ -376,7 +440,7 @@ async function fetchUpstream(url: URL, init: RequestInit, method: string) {
   throw lastError instanceof Error ? lastError : new Error("Falha ao conectar ao destino.");
 }
 
-export async function handleGatewayRequest(req: Request, res: Response) {
+async function handleGatewayRequest(req: Request, res: Response) {
   const token = decodeGatewayTokenFromPath(req.params.token);
   try {
     applyGatewayCors(req, res);
@@ -385,9 +449,9 @@ export async function handleGatewayRequest(req: Request, res: Response) {
     const claims = await readGatewayToken(token);
     const upstreamUrl = getUpstreamUrl(req, claims);
 
-    // Validação pública segura contra SSRF para qualquer host requisitado
     if (upstreamUrl.origin !== claims.origin) {
       await assertPublicHttpsTarget(upstreamUrl);
+      assertSessionHostAllowed(claims.origin, upstreamUrl);
     }
 
     const method = req.method.toUpperCase();
@@ -396,7 +460,6 @@ export async function handleGatewayRequest(req: Request, res: Response) {
       ? (Buffer.isBuffer(req.body) || typeof req.body === "string" ? req.body : JSON.stringify(req.body))
       : undefined;
 
-    // Utiliza User-Agent real do navegador para evitar bloqueio pelo Cloudflare
     const userAgent = req.headers["user-agent"] ||
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -404,14 +467,12 @@ export async function handleGatewayRequest(req: Request, res: Response) {
       method,
       redirect: "manual",
       headers: {
-        accept: req.headers.accept || "*/*",
+        accept: req.headers.accept || "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "accept-language": req.headers["accept-language"] || "pt-BR,pt;q=0.9,en;q=0.8",
         "accept-encoding": req.headers["accept-encoding"] || "gzip, br, deflate",
         "user-agent": userAgent,
-        host: upstreamUrl.host,
-        origin: upstreamUrl.origin,
-        referer: upstreamUrl.toString(),
         ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
+        ...(req.headers.referer ? { referer: req.headers.referer } : {}),
         ...(req.headers["content-type"] ? { "content-type": req.headers["content-type"] } : {}),
         ...(req.headers.range ? { range: req.headers.range } : {}),
         ...(req.headers["if-none-match"] ? { "if-none-match": req.headers["if-none-match"] } : {}),
@@ -420,12 +481,12 @@ export async function handleGatewayRequest(req: Request, res: Response) {
       body: requestBody,
     }, method);
 
-    // Redirecionamentos (301, 302, 307, 308)
     if (upstream.status >= 300 && upstream.status < 400) {
       const location = upstream.headers.get("location");
       if (!location) return res.status(upstream.status).end();
       const redirectTarget = new URL(location, upstreamUrl);
       await assertPublicHttpsTarget(redirectTarget);
+      assertSessionHostAllowed(claims.origin, redirectTarget);
       res.setHeader("location", gatewayHostPath(token, redirectTarget, claims.origin));
       return res.status(upstream.status).end();
     }
@@ -434,8 +495,6 @@ export async function handleGatewayRequest(req: Request, res: Response) {
     res.status(upstream.status);
 
     const contentType = upstream.headers.get("content-type") || "";
-
-    // Injeção de scripts no HTML
     if (contentType.includes("text/html") && upstream.body) {
       const html = rewriteHtml(await upstream.text(), upstreamUrl, token);
       res.removeHeader("content-length");
@@ -447,7 +506,6 @@ export async function handleGatewayRequest(req: Request, res: Response) {
           : `${html}${sessionScript}`);
     }
 
-    // Módulos dinâmicos JS
     if (/(?:javascript|ecmascript|text\/js)/i.test(contentType) && upstream.body) {
       const source = await upstream.text();
       res.removeHeader("content-length");
@@ -456,7 +514,6 @@ export async function handleGatewayRequest(req: Request, res: Response) {
 
     if (!upstream.body) return res.end();
 
-    // Streaming contínuo (Range / áudio / vídeo / wasm)
     Readable.fromWeb(upstream.body as any).on("error", () => {
       if (!res.headersSent) res.status(502);
       res.end();
