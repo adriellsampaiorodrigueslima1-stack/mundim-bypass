@@ -32,25 +32,42 @@ export function decodeGatewayTokenFromPath(token: string) {
 function isBlockedAddress(address: string) {
   if (net.isIPv4(address)) {
     const [a, b] = address.split(".").map(Number);
-    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19));
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19))
+    );
   }
   if (net.isIPv6(address)) {
     const normalized = address.toLowerCase();
-    return normalized === "::" || normalized === "::1" || normalized.startsWith("fc") ||
-      normalized.startsWith("fd") || normalized.startsWith("fe8") || normalized.startsWith("fe9") ||
-      normalized.startsWith("fea") || normalized.startsWith("feb");
+    return (
+      normalized === "::" ||
+      normalized === "::1" ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd") ||
+      normalized.startsWith("fe8") ||
+      normalized.startsWith("fe9") ||
+      normalized.startsWith("fea") ||
+      normalized.startsWith("feb")
+    );
   }
   return true;
 }
 
-// Única barreira de segurança necessária: impede invasão à rede local do servidor (SSRF)
 export async function assertPublicHttpsTarget(target: URL) {
   if (target.protocol !== "https:" && target.protocol !== "http:") {
     throw new Error("O gateway aceita somente destinos HTTP e HTTPS.");
   }
-  if (target.hostname === "localhost" || target.hostname.endsWith(".local") || target.hostname.endsWith(".internal")) {
+  if (
+    target.hostname === "localhost" ||
+    target.hostname.endsWith(".local") ||
+    target.hostname.endsWith(".internal")
+  ) {
     throw new Error("Destinos locais ou internos não são permitidos.");
   }
   const addresses = net.isIP(target.hostname)
@@ -102,10 +119,16 @@ export async function readGatewayToken(token: string): Promise<GatewayClaims> {
   const claims = JSON.parse(new TextDecoder().decode(plaintext)) as GatewayClaims;
   const idleUntil = activeSessions.get(claims.sid);
 
-  if (!claims || typeof claims.sid !== "string" || typeof claims.origin !== "string" ||
-      typeof claims.initialPath !== "string" || typeof claims.exp !== "number" ||
-      claims.exp < Date.now() || closedSessions.has(claims.sid) ||
-      (typeof idleUntil === "number" && idleUntil < Date.now())) {
+  if (
+    !claims ||
+    typeof claims.sid !== "string" ||
+    typeof claims.origin !== "string" ||
+    typeof claims.initialPath !== "string" ||
+    typeof claims.exp !== "number" ||
+    claims.exp < Date.now() ||
+    closedSessions.has(claims.sid) ||
+    (typeof idleUntil === "number" && idleUntil < Date.now())
+  ) {
     throw new Error("Sessão fechada, ociosa ou inválida.");
   }
   activeSessions.set(claims.sid, Date.now() + SESSION_IDLE_TIMEOUT_MS);
@@ -132,14 +155,10 @@ function gatewayPath(token: string, target: URL) {
   return `/gateway/${encodeGatewayTokenForPath(token)}${suffix === "/" ? "/" : suffix}`;
 }
 
-// Rotas de recursos secundários (como APIs, CDNs, Web Workers)
 function gatewayHostPath(token: string, target: URL, sessionOrigin: string) {
   if (target.origin === sessionOrigin) return gatewayPath(token, target);
   return `/gateway/${encodeGatewayTokenForPath(token)}/__host/${encodeURIComponent(target.host)}${target.pathname || "/"}${target.search}`;
 }
-
-// Removemos `assertSessionHostAllowed` e `isRelatedGameHost`
-// Qualquer link ou script agora pode ser processado e acessado através do proxy
 
 function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
   const attributePattern = /(src|href|action|poster)=("|')([^"']+)(\2)/gi;
@@ -154,8 +173,10 @@ function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
   });
 }
 
+// Regex universal para Webpack, Vite e Rollup
 function rewriteDynamicModuleBase(source: string, token: string) {
-  return source.replace(/de\.p="\/"/g, `de.p="/gateway/${encodeGatewayTokenForPath(token)}/"`);
+  const tokenPath = `/gateway/${encodeGatewayTokenForPath(token)}/`;
+  return source.replace(/([a-zA-Z0-9_$]+)\.p\s*=\s*["']\/["']/g, `$1.p="${tokenPath}"`);
 }
 
 function sessionHeartbeatScript(token: string, siteOrigin: string) {
@@ -168,26 +189,37 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     const pathToken = ${safePathToken};
     const site = ${safeSite};
     const siteOrigin = 'https://' + site;
+    const gatewayBase = location.origin + '/gateway/' + pathToken;
 
     const gatewayHttpUrl = (value) => {
       try {
-        const raw = String(value);
-        if (raw.startsWith('/api/gateway') || raw.startsWith('/gateway')) return null;
+        if (!value) return null;
+        let raw = String(value);
+
+        if (raw.includes('/gateway/' + pathToken)) return raw;
+        if (raw.startsWith('/api/gateway')) return null;
+
+        // Se a URL contém o próprio host do proxy (ex: gerada por new Request('/api'))
+        if (raw.startsWith(location.origin)) {
+          const tempUrl = new URL(raw);
+          raw = tempUrl.pathname + tempUrl.search;
+        }
+
         const base = raw.startsWith('/') || raw.startsWith('?') || raw.startsWith('#') ? siteOrigin : document.baseURI;
         const parsed = new URL(raw, base);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-        
-        // Aceita QUALQUER domínio, dispensando verificações rígidas
+
         const hostPrefix = parsed.origin === siteOrigin ? '' : '/__host/' + encodeURIComponent(parsed.host);
-        return location.origin + '/gateway/' + pathToken + hostPrefix + parsed.pathname + parsed.search;
+        return gatewayBase + hostPrefix + parsed.pathname + parsed.search;
       } catch { return null; }
     };
 
     const rewriteElementUrl = (element) => {
       for (const attribute of ['src', 'href', 'action', 'poster']) {
         if (!element.hasAttribute?.(attribute)) continue;
-        const rewritten = gatewayHttpUrl(element.getAttribute(attribute));
-        if (rewritten) element.setAttribute(attribute, rewritten);
+        const val = element.getAttribute(attribute);
+        const rewritten = gatewayHttpUrl(val);
+        if (rewritten && rewritten !== val) element.setAttribute(attribute, rewritten);
       }
     };
 
@@ -203,16 +235,25 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
       if (record.type === 'attributes') rewriteElementUrl(record.target);
     })).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'href', 'action', 'poster'] });
 
-    // Patch nativo para rotas dinâmicas do Bloxd.io
+    // Patch em fetch: aceita Strings e objetos Request nativos
     const NativeFetch = window.fetch.bind(window);
     window.fetch = function(input, init) {
-      const original = input instanceof Request ? input.url : String(input);
-      const rewritten = gatewayHttpUrl(original);
-      if (!rewritten) return NativeFetch(input, init);
-      if (input instanceof Request) return NativeFetch(new Request(rewritten, input), init);
-      return NativeFetch(rewritten, init);
+      try {
+        if (input instanceof Request) {
+          const rewritten = gatewayHttpUrl(input.url);
+          if (rewritten && rewritten !== input.url) {
+            return NativeFetch(new Request(rewritten, input), init);
+          }
+          return NativeFetch(input, init);
+        }
+        const rewritten = gatewayHttpUrl(input);
+        return NativeFetch(rewritten || input, init);
+      } catch {
+        return NativeFetch(input, init);
+      }
     };
 
+    // Patch em XMLHttpRequest
     const NativeXHR = window.XMLHttpRequest;
     const GatewayXHR = function() {
       const xhr = new NativeXHR();
@@ -226,6 +267,18 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     GatewayXHR.prototype = NativeXHR.prototype;
     window.XMLHttpRequest = GatewayXHR;
 
+    // Patch em Web Workers (necessário para jogos voxel e Bloxd.io)
+    const NativeWorker = window.Worker;
+    window.Worker = function(scriptURL, options) {
+      try {
+        const rewritten = gatewayHttpUrl(scriptURL);
+        return new NativeWorker(rewritten || scriptURL, options);
+      } catch {
+        return new NativeWorker(scriptURL, options);
+      }
+    };
+
+    // Patch em WebSocket
     const NativeWebSocket = window.WebSocket;
     const GatewayWebSocket = function(url, protocols) {
       try {
@@ -235,7 +288,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
         if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
           const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
           const encodedHost = encodeURIComponent(parsed.host);
-          const proxied = protocol + '//' + location.host + '/gateway-ws/' + encodeGatewayTokenForPath(token) + '/__host/' + encodedHost + parsed.pathname + parsed.search;
+          const proxied = protocol + '//' + location.host + '/gateway-ws/' + pathToken + '/__host/' + encodedHost + parsed.pathname + parsed.search;
           return protocols === undefined ? new NativeWebSocket(proxied) : new NativeWebSocket(proxied, protocols);
         }
       } catch {}
@@ -244,9 +297,9 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     GatewayWebSocket.prototype = NativeWebSocket.prototype;
     window.WebSocket = GatewayWebSocket;
 
-    // Loading overlay
+    // Overlay de carregamento com destruição garantida
     const style = document.createElement('style');
-    style.textContent = '@keyframes bsSpin { to { transform: rotate(360deg); } } @keyframes bsPulse { 0%,100% { opacity:.5; } 50% { opacity:.9; } } @keyframes bsIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } } #bypassschool-loader { position:fixed; inset:0; z-index:2147483646; display:grid; place-items:center; background:radial-gradient(circle at 50% 42%, #102642 0%, #050912 56%, #02040a 100%); color:#eaf7ff; font-family:system-ui,-apple-system,sans-serif; transition:opacity .42s ease, visibility .42s ease; } #bypassschool-loader.bs-ready { opacity:0; visibility:hidden; pointer-events:none; } .bs-loader-box { text-align:center; animation:bsIn .55s ease both; } .bs-loader-ring { width:58px; height:58px; margin:0 auto 20px; border:2px solid rgba(57,196,255,.2); border-top-color:#36c6ff; border-right-color:#8ef0ff; border-radius:50%; animation:bsSpin 1s linear infinite; box-shadow:0 0 26px rgba(35,184,255,.26); } .bs-loader-title { letter-spacing:.12em; text-transform:lowercase; font-size:14px; font-weight:600; } .bs-loader-sub { margin-top:9px; color:#80a3b9; font-size:11px; } #bypassschool-watermark { position:fixed; top:9px; right:12px; z-index:2147483645; display:flex; align-items:center; gap:5px; padding:4px 7px; border:1px solid rgba(74,191,239,.2); border-radius:5px; background:rgba(3,12,24,.68); box-shadow:0 3px 12px rgba(0,0,0,.16); color:#a9c8d8; font:9px ui-monospace,SFMono-Regular,monospace; backdrop-filter:blur(7px); animation:bsPulse 3.4s ease-in-out infinite; } .bs-watermark-name { color:#49c8ff; font-weight:700; } .bs-watermark-sep { color:#52798f; } #bypassschool-emergency { border:0; border-radius:3px; padding:2px 5px; background:#d92d3f; color:#fff; font:700 8px ui-monospace,monospace; cursor:pointer; pointer-events:auto; } #bypassschool-emergency:hover { background:#ff4658; }';
+    style.textContent = '@keyframes bsSpin { to { transform: rotate(360deg); } } @keyframes bsPulse { 0%,100% { opacity:.5; } 50% { opacity:.9; } } @keyframes bsIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } } #bypassschool-loader { position:fixed; inset:0; z-index:2147483646; display:grid; place-items:center; background:radial-gradient(circle at 50% 42%, #102642 0%, #050912 56%, #02040a 100%); color:#eaf7ff; font-family:system-ui,-apple-system,sans-serif; transition:opacity .35s ease, visibility .35s ease; } #bypassschool-loader.bs-ready { opacity:0; visibility:hidden; pointer-events:none; } .bs-loader-box { text-align:center; animation:bsIn .55s ease both; } .bs-loader-ring { width:58px; height:58px; margin:0 auto 20px; border:2px solid rgba(57,196,255,.2); border-top-color:#36c6ff; border-right-color:#8ef0ff; border-radius:50%; animation:bsSpin 1s linear infinite; box-shadow:0 0 26px rgba(35,184,255,.26); } .bs-loader-title { letter-spacing:.12em; text-transform:lowercase; font-size:14px; font-weight:600; } .bs-loader-sub { margin-top:9px; color:#80a3b9; font-size:11px; } #bypassschool-watermark { position:fixed; top:9px; right:12px; z-index:2147483645; display:flex; align-items:center; gap:5px; padding:4px 7px; border:1px solid rgba(74,191,239,.2); border-radius:5px; background:rgba(3,12,24,.68); box-shadow:0 3px 12px rgba(0,0,0,.16); color:#a9c8d8; font:9px ui-monospace,SFMono-Regular,monospace; backdrop-filter:blur(7px); animation:bsPulse 3.4s ease-in-out infinite; } .bs-watermark-name { color:#49c8ff; font-weight:700; } .bs-watermark-sep { color:#52798f; } #bypassschool-emergency { border:0; border-radius:3px; padding:2px 5px; background:#d92d3f; color:#fff; font:700 8px ui-monospace,monospace; cursor:pointer; pointer-events:auto; } #bypassschool-emergency:hover { background:#ff4658; }';
     document.head.appendChild(style);
 
     const loader = document.createElement('div');
@@ -268,12 +321,12 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
     if (emergencyBtn) emergencyBtn.addEventListener('click', emergency);
     window.addEventListener('keydown', (event) => { if (event.key === '0') emergency(); });
 
-    // Correção: Encerramento garantido do loading
+    // Destravamento garantido da tela
     const dismissLoader = () => {
       try {
         if (loader && !loader.classList.contains('bs-ready')) {
           loader.classList.add('bs-ready');
-          setTimeout(() => { if (loader.parentNode) loader.parentNode.removeChild(loader); }, 350);
+          setTimeout(() => { if (loader.parentNode) loader.parentNode.removeChild(loader); }, 300);
         }
       } catch {}
     };
@@ -284,7 +337,7 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
       window.addEventListener('load', dismissLoader, { once: true });
       document.addEventListener('DOMContentLoaded', dismissLoader, { once: true });
     }
-    setTimeout(dismissLoader, 3000); // Destrava a tela no máximo em 3 segundos
+    setTimeout(dismissLoader, 2000);
 
     const beat = async () => {
       const started = performance.now();
@@ -326,22 +379,33 @@ function getUpstreamUrl(req: Request, claims: GatewayClaims) {
 }
 
 function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
-  for (const name of ["content-type", "cache-control", "etag", "last-modified", "content-range", "accept-ranges", "content-length", "vary"]) {
+  for (const name of [
+    "content-type",
+    "cache-control",
+    "etag",
+    "last-modified",
+    "content-range",
+    "accept-ranges",
+    "vary",
+  ]) {
     const value = upstream.headers.get(name);
     if (value) res.setHeader(name, value);
   }
 
-  // Remoção integral de políticas de restrição de ambiente para fluidez total
+  // Remove políticas que bloqueiam o carregamento em iframe ou scripts dinâmicos
   res.removeHeader("content-security-policy");
   res.removeHeader("content-security-policy-report-only");
   res.removeHeader("x-frame-options");
   res.removeHeader("cross-origin-embedder-policy");
   res.removeHeader("cross-origin-opener-policy");
 
-  const setCookies = typeof upstream.headers.getSetCookie === "function"
-    ? upstream.headers.getSetCookie()
-    : (upstream.headers.get("set-cookie") ? [upstream.headers.get("set-cookie") as string] : []);
-  
+  const setCookies =
+    typeof upstream.headers.getSetCookie === "function"
+      ? upstream.headers.getSetCookie()
+      : upstream.headers.get("set-cookie")
+        ? [upstream.headers.get("set-cookie") as string]
+        : [];
+
   for (const cookie of setCookies) {
     let rewritten = cookie.replace(/;\s*Domain=[^;]+/gi, "");
     rewritten = rewritten.replace(/;\s*SameSite=[^;]+/gi, "; SameSite=None");
@@ -356,7 +420,6 @@ function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
 }
 
 function applyGatewayCors(req: Request, res: Response) {
-  // CORS universal
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "*");
@@ -376,7 +439,7 @@ async function fetchUpstream(url: URL, init: RequestInit, method: string) {
     } catch (error) {
       clearTimeout(timeout);
       lastError = error;
-      if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 250));
+      if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 250));
     }
   }
   throw lastError instanceof Error ? lastError : new Error("Falha ao conectar ao destino.");
@@ -391,36 +454,42 @@ async function handleGatewayRequest(req: Request, res: Response) {
     const claims = await readGatewayToken(token);
     const upstreamUrl = getUpstreamUrl(req, claims);
 
-    // Protege contra SSRF
     await assertPublicHttpsTarget(upstreamUrl);
 
     const method = req.method.toUpperCase();
     const hasBody = !["GET", "HEAD"].includes(method);
-    const requestBody: any = hasBody && req.body !== undefined
-      ? (Buffer.isBuffer(req.body) || typeof req.body === "string" ? req.body : JSON.stringify(req.body))
-      : undefined;
+    const requestBody: any =
+      hasBody && req.body !== undefined
+        ? Buffer.isBuffer(req.body) || typeof req.body === "string"
+          ? req.body
+          : JSON.stringify(req.body)
+        : undefined;
 
-    // User agent mascarado para evitar bloqueios do Cloudflare nos assets do jogo
-    const userAgent = req.headers["user-agent"] ||
+    const userAgent =
+      req.headers["user-agent"] ||
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-    const upstream = await fetchUpstream(upstreamUrl, {
-      method,
-      redirect: "manual",
-      headers: {
-        accept: req.headers.accept || "*/*",
-        "accept-language": req.headers["accept-language"] || "pt-BR,pt;q=0.9,en;q=0.8",
-        "accept-encoding": req.headers["accept-encoding"] || "gzip, br, deflate",
-        "user-agent": userAgent,
-        ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
-        ...(req.headers.referer ? { referer: req.headers.referer } : {}),
-        ...(req.headers["content-type"] ? { "content-type": req.headers["content-type"] } : {}),
-        ...(req.headers.range ? { range: req.headers.range } : {}),
-        ...(req.headers["if-none-match"] ? { "if-none-match": req.headers["if-none-match"] } : {}),
-        ...(req.headers["if-modified-since"] ? { "if-modified-since": req.headers["if-modified-since"] } : {}),
+    const upstream = await fetchUpstream(
+      upstreamUrl,
+      {
+        method,
+        redirect: "manual",
+        headers: {
+          accept: req.headers.accept || "*/*",
+          "accept-language": req.headers["accept-language"] || "pt-BR,pt;q=0.9,en;q=0.8",
+          "accept-encoding": req.headers["accept-encoding"] || "gzip, br, deflate",
+          "user-agent": userAgent,
+          ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
+          ...(req.headers.referer ? { referer: req.headers.referer } : {}),
+          ...(req.headers["content-type"] ? { "content-type": req.headers["content-type"] } : {}),
+          ...(req.headers.range ? { range: req.headers.range } : {}),
+          ...(req.headers["if-none-match"] ? { "if-none-match": req.headers["if-none-match"] } : {}),
+          ...(req.headers["if-modified-since"] ? { "if-modified-since": req.headers["if-modified-since"] } : {}),
+        },
+        body: requestBody,
       },
-      body: requestBody,
-    }, method);
+      method
+    );
 
     if (upstream.status >= 300 && upstream.status < 400) {
       const location = upstream.headers.get("location");
@@ -435,20 +504,22 @@ async function handleGatewayRequest(req: Request, res: Response) {
     res.status(upstream.status);
 
     const contentType = upstream.headers.get("content-type") || "";
-    
+
     // Reescreve HTML
     if (contentType.includes("text/html") && upstream.body) {
       const html = rewriteHtml(await upstream.text(), upstreamUrl, token);
       res.removeHeader("content-length");
       const sessionScript = sessionHeartbeatScript(token, claims.origin);
-      return res.send(html.includes("</head>")
-        ? html.replace(/<\/head>/i, `${sessionScript}</head>`)
-        : html.includes("</body>")
-          ? html.replace(/<\/body>/i, `${sessionScript}</body>`)
-          : `${html}${sessionScript}`);
+      return res.send(
+        html.includes("</head>")
+          ? html.replace(/<\/head>/i, `${sessionScript}</head>`)
+          : html.includes("</body>")
+            ? html.replace(/<\/body>/i, `${sessionScript}</body>`)
+            : `${html}${sessionScript}`
+      );
     }
 
-    // Reescreve Webpack/Módulos JS
+    // Reescreve Módulos JS / Webpack
     if (/(?:javascript|ecmascript|text\/js)/i.test(contentType) && upstream.body) {
       const source = await upstream.text();
       res.removeHeader("content-length");
@@ -457,12 +528,13 @@ async function handleGatewayRequest(req: Request, res: Response) {
 
     if (!upstream.body) return res.end();
 
-    // Envio limpo sem interrupção de memória (Stream HTTP)
-    Readable.fromWeb(upstream.body as any).on("error", () => {
-      if (!res.headersSent) res.status(502);
-      res.end();
-    }).pipe(res);
-
+    // Streaming seguro para assets, imagens e dados binários
+    Readable.fromWeb(upstream.body as any)
+      .on("error", () => {
+        if (!res.headersSent) res.status(502);
+        res.end();
+      })
+      .pipe(res);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha ao processar a requisição.";
     const status = message.includes("Sessão") ? 401 : 502;
