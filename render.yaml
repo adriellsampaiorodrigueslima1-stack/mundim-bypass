@@ -17,3 +17,5 @@ services:
         sync: false
       - key: ARCADE_API_KEYS
         sync: false
+      - key: GATEWAY_SESSION_IDLE_MS
+        value: "1800000"

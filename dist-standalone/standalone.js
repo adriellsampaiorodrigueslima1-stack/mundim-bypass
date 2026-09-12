@@ -25,12 +25,18 @@ var ENV = {
 };
 
 // server/gateway.ts
-var SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1e3;
+var SESSION_IDLE_TIMEOUT_MS = Number(process.env.GATEWAY_SESSION_IDLE_MS || 30 * 60 * 1e3);
 var SESSION_MAX_TTL_MS = 24 * 60 * 60 * 1e3;
 var UPSTREAM_TIMEOUT_MS = 3e4;
 var RETRYABLE_METHODS = /* @__PURE__ */ new Set(["GET", "HEAD"]);
 var activeSessions = /* @__PURE__ */ new Map();
 var closedSessions = /* @__PURE__ */ new Set();
+function encodeGatewayTokenForPath(token) {
+  return token.replace(/\./g, "~");
+}
+function decodeGatewayTokenFromPath(token) {
+  return token.replace(/~/g, ".");
+}
 function isBlockedAddress(address) {
   if (net.isIPv4(address)) {
     const [a, b] = address.split(".").map(Number);
@@ -106,11 +112,11 @@ async function closeGatewaySession(token) {
 }
 function gatewayPath(token, target) {
   const suffix = `${target.pathname || "/"}${target.search}`;
-  return `/gateway/${token}${suffix === "/" ? "/" : suffix}`;
+  return `/gateway/${encodeGatewayTokenForPath(token)}${suffix === "/" ? "/" : suffix}`;
 }
 function gatewayHostPath(token, target, sessionOrigin) {
   if (target.origin === sessionOrigin) return gatewayPath(token, target);
-  return `/gateway/${token}/__host/${encodeURIComponent(target.host)}${target.pathname || "/"}${target.search}`;
+  return `/gateway/${encodeGatewayTokenForPath(token)}/__host/${encodeURIComponent(target.host)}${target.pathname || "/"}${target.search}`;
 }
 function isRelatedGameHost(sessionOrigin, target) {
   const sessionHost = new URL(sessionOrigin).hostname;
@@ -138,19 +144,21 @@ function rewriteHtml(html, upstreamUrl, token) {
   if (new URL(upstreamUrl).hostname === "2v2.io") {
     return rewritten.replace(/https:\/\/(?:files|api)\.2v2\.io(?=\/|['"`\s])/g, (absolute) => {
       const host = absolute.slice("https://".length);
-      return `/gateway/${token}/__host/${host}`;
+      return `/gateway/${encodeGatewayTokenForPath(token)}/__host/${host}`;
     });
   }
   return rewritten;
 }
 function rewriteDynamicModuleBase(source, token) {
-  return source.replace(/de\.p="\/"/g, `de.p="/gateway/${token}/"`);
+  return source.replace(/de\.p="\/"/g, `de.p="/gateway/${encodeGatewayTokenForPath(token)}/"`);
 }
 function sessionHeartbeatScript(token, siteOrigin) {
   const safeToken = JSON.stringify(token);
+  const safePathToken = JSON.stringify(encodeGatewayTokenForPath(token));
   const safeSite = JSON.stringify(siteOrigin.replace(/^https?:\/\//, ""));
   return `<script data-bypassschool-session="bridge">(() => {
     const token = ${safeToken};
+    const pathToken = ${safePathToken};
     const site = ${safeSite};
     const siteOrigin = 'https://' + site;
     const relatedHost = (hostname) => site === '2v2.io' && (hostname === 'files.2v2.io' || hostname === 'api.2v2.io');
@@ -165,9 +173,29 @@ function sessionHeartbeatScript(token, siteOrigin) {
         const relatedSubdomain = (site === 'bloxd.io' && (parsed.hostname === 'bloxd.io' || parsed.hostname.endsWith('.bloxd.io'))) || relatedHost(parsed.hostname);
         if (!sameOrigin && !relatedSubdomain) return null;
         const hostPrefix = sameOrigin ? '' : '/__host/' + encodeURIComponent(parsed.host);
-        return location.origin + '/gateway/' + token + hostPrefix + parsed.pathname + parsed.search;
+        return location.origin + '/gateway/' + pathToken + hostPrefix + parsed.pathname + parsed.search;
       } catch { return null; }
     };
+    const rewriteElementUrl = (element) => {
+      for (const attribute of ['src', 'href', 'action', 'poster']) {
+        if (!element.hasAttribute?.(attribute)) continue;
+        const rewritten = gatewayHttpUrl(element.getAttribute(attribute));
+        if (rewritten) element.setAttribute(attribute, rewritten);
+      }
+    };
+    const rewriteDocumentUrls = (root) => {
+      if (root?.nodeType !== 1 && root?.nodeType !== 9) return;
+      if (root.nodeType === 1) rewriteElementUrl(root);
+      root.querySelectorAll?.('[src], [href], [action], [poster]').forEach(rewriteElementUrl);
+    };
+    rewriteDocumentUrls(document);
+    new MutationObserver((records) => records.forEach((record) => {
+      record.addedNodes.forEach((node) => rewriteDocumentUrls(node));
+      if (record.type === 'attributes') rewriteElementUrl(record.target);
+    })).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'href', 'action', 'poster'] });
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.register('/gateway-sw.js', { scope: '/gateway/' + pathToken + '/' }).catch(() => {});
+    }
     const NativeFetch = window.fetch.bind(window);
     window.fetch = function(input, init) {
       const original = input instanceof Request ? input.url : String(input);
@@ -197,7 +225,7 @@ function sessionHeartbeatScript(token, siteOrigin) {
         if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
           const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
           const encodedHost = encodeURIComponent(parsed.host);
-          const proxied = protocol + '//' + location.host + '/gateway-ws/' + token + '/__host/' + encodedHost + parsed.pathname + parsed.search;
+          const proxied = protocol + '//' + location.host + '/gateway-ws/' + encodeGatewayTokenForPath(token) + '/__host/' + encodedHost + parsed.pathname + parsed.search;
           return protocols === undefined ? new NativeWebSocket(proxied) : new NativeWebSocket(proxied, protocols);
         }
       } catch {}
@@ -259,7 +287,7 @@ function getUpstreamUrl(req, claims) {
   return new URL(requestPath, claims.origin);
 }
 function copyResponseHeaders(upstream, res) {
-  for (const name of ["content-type", "cache-control", "etag", "last-modified", "content-range", "accept-ranges", "vary"]) {
+  for (const name of ["content-type", "cache-control", "etag", "last-modified", "content-range", "accept-ranges", "content-length", "vary"]) {
     const value = upstream.headers.get(name);
     if (value) res.setHeader(name, value);
   }
@@ -286,9 +314,14 @@ async function fetchUpstream(url, init, method) {
   const attempts = RETRYABLE_METHODS.has(method) ? 2 : 1;
   let lastError;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
     try {
-      return await fetch(url, { ...init, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      clearTimeout(timeout);
+      return response;
     } catch (error) {
+      clearTimeout(timeout);
       lastError = error;
       if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 250));
     }
@@ -296,7 +329,7 @@ async function fetchUpstream(url, init, method) {
   throw lastError instanceof Error ? lastError : new Error("Falha ao conectar ao destino.");
 }
 async function handleGatewayRequest(req, res) {
-  const token = req.params.token;
+  const token = decodeGatewayTokenFromPath(req.params.token);
   try {
     applyGatewayCors(req, res);
     if (req.method === "OPTIONS") return res.status(204).end();
@@ -332,7 +365,7 @@ async function handleGatewayRequest(req, res) {
       const redirectTarget = new URL(location, upstreamUrl);
       await assertPublicHttpsTarget(redirectTarget);
       assertSessionHostAllowed(claims.origin, redirectTarget);
-      res.setHeader("location", gatewayPath(token, redirectTarget));
+      res.setHeader("location", gatewayHostPath(token, redirectTarget, claims.origin));
       return res.status(upstream.status).end();
     }
     copyResponseHeaders(upstream, res);
@@ -373,8 +406,8 @@ function registerGatewayRoutes(app2) {
     await closeGatewaySession(String(req.body?.token || ""));
     res.status(204).end();
   });
-  app2.get("/gateway/:token", handleGatewayRequest);
-  app2.get("/gateway/:token/*", handleGatewayRequest);
+  app2.all("/gateway/:token", handleGatewayRequest);
+  app2.all("/gateway/:token/*", handleGatewayRequest);
 }
 
 // server/websocketGateway.ts
@@ -404,7 +437,7 @@ function registerGatewayWebSockets(server2) {
     const pathname = new URL(request.url || "/", "http://gateway.local").pathname;
     const match = pathname.match(/^\/gateway-ws\/([^/]+)(\/.*)?$/);
     if (!match) return;
-    const token = match[1];
+    const token = decodeGatewayTokenFromPath(decodeURIComponent(match[1]));
     try {
       const claims = await readGatewayToken(token);
       const upstreamHttps = websocketTarget(request, token, claims.origin);
@@ -443,6 +476,7 @@ function registerGatewayWebSockets(server2) {
         });
         client.on("error", () => closeBoth(1011, "client error"));
         upstream.on("error", () => closeBoth(1011, "upstream error"));
+        upstream.on("unexpected-response", () => closeBoth(1011, "upstream rejected websocket"));
       });
     } catch {
       socket.destroy();
@@ -516,8 +550,9 @@ function registerArcadeApi(app2) {
       if (!rawTarget) return res.status(400).json({ ok: false, error: "Campo 'url' \xE9 obrigat\xF3rio." });
       const target = await parseAllowedTarget(rawTarget);
       const token = await createGatewayToken(target);
-      const gatewayPath2 = `/gateway/${token}${target.pathname === "/" ? "/" : `${target.pathname}${target.search}`}`;
-      const websocketPath = `/gateway-ws/${token}/`;
+      const encodedToken = encodeGatewayTokenForPath(token);
+      const gatewayPath2 = `/gateway/${encodedToken}${target.pathname === "/" ? "/" : `${target.pathname}${target.search}`}`;
+      const websocketPath = `/gateway-ws/${encodedToken}/`;
       return res.status(201).json({
         ok: true,
         session: {

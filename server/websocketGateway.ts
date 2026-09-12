@@ -78,6 +78,7 @@ export function registerGatewayWebSockets(server: Server) {
         });
         client.on("error", () => closeBoth(1011, "client error"));
         upstream.on("error", () => closeBoth(1011, "upstream error"));
+        upstream.on("unexpected-response", () => closeBoth(1011, "upstream rejected websocket"));
       });
     } catch {
       socket.destroy();

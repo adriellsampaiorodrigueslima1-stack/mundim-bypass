@@ -6,7 +6,7 @@ import type { Express, Request, Response } from "express";
 import { CompactEncrypt, compactDecrypt } from "jose";
 import { ENV } from "./_core/env";
 
-const SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
+const SESSION_IDLE_TIMEOUT_MS = Number(process.env.GATEWAY_SESSION_IDLE_MS || 30 * 60 * 1000);
 const SESSION_MAX_TTL_MS = 24 * 60 * 60 * 1000;
 const UPSTREAM_TIMEOUT_MS = 30_000;
 const RETRYABLE_METHODS = new Set(["GET", "HEAD"]);
@@ -184,14 +184,16 @@ function rewriteHtml(html: string, upstreamUrl: URL, token: string) {
 }
 
 function rewriteDynamicModuleBase(source: string, token: string) {
-  return source.replace(/de\.p="\/"/g, `de.p="/gateway/${token}/"`);
+  return source.replace(/de\.p="\/"/g, `de.p="/gateway/${encodeGatewayTokenForPath(token)}/"`);
 }
 
 function sessionHeartbeatScript(token: string, siteOrigin: string) {
   const safeToken = JSON.stringify(token);
+  const safePathToken = JSON.stringify(encodeGatewayTokenForPath(token));
   const safeSite = JSON.stringify(siteOrigin.replace(/^https?:\/\//, ""));
   return `<script data-bypassschool-session="bridge">(() => {
     const token = ${safeToken};
+    const pathToken = ${safePathToken};
     const site = ${safeSite};
     const siteOrigin = 'https://' + site;
     const relatedHost = (hostname) => site === '2v2.io' && (hostname === 'files.2v2.io' || hostname === 'api.2v2.io');
@@ -206,9 +208,29 @@ function sessionHeartbeatScript(token: string, siteOrigin: string) {
         const relatedSubdomain = (site === 'bloxd.io' && (parsed.hostname === 'bloxd.io' || parsed.hostname.endsWith('.bloxd.io'))) || relatedHost(parsed.hostname);
         if (!sameOrigin && !relatedSubdomain) return null;
         const hostPrefix = sameOrigin ? '' : '/__host/' + encodeURIComponent(parsed.host);
-        return location.origin + '/gateway/' + encodeGatewayTokenForPath(token) + hostPrefix + parsed.pathname + parsed.search;
+        return location.origin + '/gateway/' + pathToken + hostPrefix + parsed.pathname + parsed.search;
       } catch { return null; }
     };
+    const rewriteElementUrl = (element) => {
+      for (const attribute of ['src', 'href', 'action', 'poster']) {
+        if (!element.hasAttribute?.(attribute)) continue;
+        const rewritten = gatewayHttpUrl(element.getAttribute(attribute));
+        if (rewritten) element.setAttribute(attribute, rewritten);
+      }
+    };
+    const rewriteDocumentUrls = (root) => {
+      if (root?.nodeType !== 1 && root?.nodeType !== 9) return;
+      if (root.nodeType === 1) rewriteElementUrl(root);
+      root.querySelectorAll?.('[src], [href], [action], [poster]').forEach(rewriteElementUrl);
+    };
+    rewriteDocumentUrls(document);
+    new MutationObserver((records) => records.forEach((record) => {
+      record.addedNodes.forEach((node) => rewriteDocumentUrls(node));
+      if (record.type === 'attributes') rewriteElementUrl(record.target);
+    })).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'href', 'action', 'poster'] });
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.register('/gateway-sw.js', { scope: '/gateway/' + pathToken + '/' }).catch(() => {});
+    }
     const NativeFetch = window.fetch.bind(window);
     window.fetch = function(input, init) {
       const original = input instanceof Request ? input.url : String(input);
@@ -303,7 +325,7 @@ function getUpstreamUrl(req: Request, claims: GatewayClaims) {
 }
 
 function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
-  for (const name of ["content-type", "cache-control", "etag", "last-modified", "content-range", "accept-ranges", "vary"]) {
+  for (const name of ["content-type", "cache-control", "etag", "last-modified", "content-range", "accept-ranges", "content-length", "vary"]) {
     const value = upstream.headers.get(name);
     if (value) res.setHeader(name, value);
   }
@@ -337,9 +359,16 @@ async function fetchUpstream(url: URL, init: RequestInit, method: string) {
   const attempts = RETRYABLE_METHODS.has(method) ? 2 : 1;
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
     try {
-      return await fetch(url, { ...init, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+      // The timeout only covers connection/response headers. Once fetch resolves,
+      // the response body is streamed without an artificial 30-second cutoff.
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      clearTimeout(timeout);
+      return response;
     } catch (error) {
+      clearTimeout(timeout);
       lastError = error;
       if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 250));
     }
@@ -391,7 +420,7 @@ async function handleGatewayRequest(req: Request, res: Response) {
       const redirectTarget = new URL(location, upstreamUrl);
       await assertPublicHttpsTarget(redirectTarget);
       assertSessionHostAllowed(claims.origin, redirectTarget);
-      res.setHeader("location", gatewayPath(token, redirectTarget));
+      res.setHeader("location", gatewayHostPath(token, redirectTarget, claims.origin));
       return res.status(upstream.status).end();
     }
 
@@ -438,6 +467,6 @@ export function registerGatewayRoutes(app: Express) {
     await closeGatewaySession(String(req.body?.token || ""));
     res.status(204).end();
   });
-  app.get("/gateway/:token", handleGatewayRequest);
-  app.get("/gateway/:token/*", handleGatewayRequest);
+  app.all("/gateway/:token", handleGatewayRequest);
+  app.all("/gateway/:token/*", handleGatewayRequest);
 }
