@@ -21,12 +21,23 @@ export type GatewayClaims = {
   exp: number;
 };
 
+// Encode the complete JWE as base64url so punctuation in tokens cannot be
+// normalized or split by browsers and reverse proxies in a URL path.
 export function encodeGatewayTokenForPath(token: string) {
-  return token.replace(/\./g, "~");
+  return Buffer.from(token, "utf8").toString("base64url");
+}
+export function decodeGatewayTokenFromPath(token: string) {
+  // Keep old links working while new sessions use base64url.
+  if (token.includes("~")) return token.replace(/~/g, ".");
+  try {
+    return Buffer.from(token, "base64url").toString("utf8");
+  } catch {
+    return token;
+  }
 }
 
-export function decodeGatewayTokenFromPath(token: string) {
-  return token.replace(/~/g, ".");
+export function getAllowedOrigins() {
+  return ["https://* (qualquer destino público) "];
 }
 
 function isBlockedAddress(address: string) {
