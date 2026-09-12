@@ -14,6 +14,32 @@ const RETRYABLE_METHODS = new Set(["GET", "HEAD"]);
 const activeSessions = new Map<string, number>();
 const closedSessions = new Set<string>();
 
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+const FORWARDED_REQUEST_HEADERS = [
+  "accept",
+  "accept-language",
+  "cache-control",
+  "content-type",
+  "if-match",
+  "if-modified-since",
+  "if-none-match",
+  "if-range",
+  "range",
+  "user-agent",
+  "x-requested-with",
+] as const;
+
+
 export type GatewayClaims = {
   sid: string;
   origin: string;
@@ -389,12 +415,66 @@ function getUpstreamUrl(req: Request, claims: GatewayClaims) {
   return new URL(requestPath, claims.origin);
 }
 
-function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
+function getRequestProtocol(req: Request) {
+  const forwarded = req.headers["x-forwarded-proto"];
+  return (typeof forwarded === "string" ? forwarded.split(",")[0].trim() : req.protocol) || "https";
+}
+
+function getProxyOrigin(req: Request) {
+  return getRequestProtocol(req) + "://" + (req.get("host") || "");
+}
+
+function proxyGatewayPrefix(token: string) {
+  return "/gateway/" + encodeGatewayTokenForPath(token);
+}
+
+function rewriteProxyReferer(value: string, token: string, claims: GatewayClaims) {
+  try {
+    const referer = new URL(value);
+    const prefix = proxyGatewayPrefix(token);
+    if (!referer.pathname.startsWith(prefix)) return value;
+
+    const suffix = referer.pathname.slice(prefix.length) || "/";
+    if (suffix.startsWith("/__host/")) {
+      const encoded = suffix.slice("/__host/".length);
+      const slashIndex = encoded.indexOf("/");
+      if (slashIndex > 0) {
+        const host = decodeURIComponent(encoded.slice(0, slashIndex));
+        return new URL((encoded.slice(slashIndex) || "/") + referer.search, "https://" + host).toString();
+      }
+    }
+    return new URL(suffix + referer.search, claims.origin).toString();
+  } catch {
+    return value;
+  }
+}
+
+function buildUpstreamRequestHeaders(req: Request, upstreamUrl: URL, claims: GatewayClaims, token: string) {
+  const headers: Record<string, string> = {};
+  for (const name of FORWARDED_REQUEST_HEADERS) {
+    const value = req.headers[name];
+    if (typeof value === "string" && value) headers[name] = value;
+  }
+
+  // fetch() pode descomprimir a resposta automaticamente; identity evita
+  // repassar Content-Encoding/Content-Length incompatíveis ao navegador.
+  headers["accept-encoding"] = "identity";
+  headers["origin"] = upstreamUrl.origin;
+  if (req.headers.cookie) headers.cookie = String(req.headers.cookie);
+  if (req.headers.referer) headers.referer = rewriteProxyReferer(String(req.headers.referer), token, claims);
+  return headers;
+}
+
+function copyResponseHeaders(upstream: globalThis.Response, res: Response, req: Request, token: string) {
   for (const name of [
     "content-type",
+    "content-length",
+    "content-disposition",
     "cache-control",
     "etag",
+    "expires",
     "last-modified",
+    "content-language",
     "content-range",
     "accept-ranges",
     "vary",
@@ -403,12 +483,20 @@ function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
     if (value) res.setHeader(name, value);
   }
 
-  // Remove políticas que bloqueiam o carregamento em iframe ou scripts dinâmicos
-  res.removeHeader("content-security-policy");
-  res.removeHeader("content-security-policy-report-only");
-  res.removeHeader("x-frame-options");
-  res.removeHeader("cross-origin-embedder-policy");
-  res.removeHeader("cross-origin-opener-policy");
+  // Nunca repasse políticas do site remoto que impeçam a página proxied.
+  for (const name of [
+    "content-security-policy",
+    "content-security-policy-report-only",
+    "x-frame-options",
+    "cross-origin-embedder-policy",
+    "cross-origin-opener-policy",
+    "cross-origin-resource-policy",
+    "access-control-allow-origin",
+    "access-control-allow-credentials",
+    "access-control-allow-headers",
+    "access-control-allow-methods",
+    "access-control-expose-headers",
+  ]) res.removeHeader(name);
 
   const setCookies =
     typeof upstream.headers.getSetCookie === "function"
@@ -416,13 +504,17 @@ function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
       : upstream.headers.get("set-cookie")
         ? [upstream.headers.get("set-cookie") as string]
         : [];
+  const cookiePath = proxyGatewayPrefix(token);
+  const secure = getRequestProtocol(req) === "https";
 
   for (const cookie of setCookies) {
-    let rewritten = cookie.replace(/;\s*Domain=[^;]+/gi, "");
-    rewritten = rewritten.replace(/;\s*SameSite=[^;]+/gi, "; SameSite=None");
-    if (!rewritten.toLowerCase().includes("secure")) {
-      rewritten += "; Secure";
-    }
+    let rewritten = cookie
+      .replace(/;\s*Domain=[^;]+/gi, "")
+      .replace(/;\s*Path=[^;]*/gi, "; Path=" + cookiePath);
+    if (!/;\s*Path=/i.test(rewritten)) rewritten += "; Path=" + cookiePath;
+    if (!/;\s*SameSite=/i.test(rewritten)) rewritten += "; SameSite=Lax";
+    if (secure && !/;\s*Secure(?:;|$)/i.test(rewritten)) rewritten += "; Secure";
+    if (!secure) rewritten = rewritten.replace(/;\s*Secure/gi, "");
     res.append("set-cookie", rewritten);
   }
 
@@ -431,10 +523,20 @@ function copyResponseHeaders(upstream: globalThis.Response, res: Response) {
 }
 
 function applyGatewayCors(req: Request, res: Response) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+  const validOrigin = /^https?:\/\//i.test(requestOrigin) ? requestOrigin : "";
+  if (validOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", validOrigin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-  res.setHeader("Access-Control-Expose-Headers", "*");
+  const requestedHeaders = typeof req.headers["access-control-request-headers"] === "string"
+    ? req.headers["access-control-request-headers"]
+    : "accept, accept-language, cache-control, content-type, if-match, if-modified-since, if-none-match, if-range, range, user-agent, x-requested-with";
+  res.setHeader("Access-Control-Allow-Headers", requestedHeaders);
+  res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range, Content-Type, ETag, Last-Modified, Accept-Ranges, Content-Disposition");
+  res.setHeader("Access-Control-Max-Age", "600");
+  res.append("Vary", "Origin");
 }
 
 async function fetchUpstream(url: URL, init: RequestInit, method: string) {
@@ -476,27 +578,12 @@ async function handleGatewayRequest(req: Request, res: Response) {
           : JSON.stringify(req.body)
         : undefined;
 
-    const userAgent =
-      req.headers["user-agent"] ||
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-
     const upstream = await fetchUpstream(
       upstreamUrl,
       {
         method,
         redirect: "manual",
-        headers: {
-          accept: req.headers.accept || "*/*",
-          "accept-language": req.headers["accept-language"] || "pt-BR,pt;q=0.9,en;q=0.8",
-          "accept-encoding": req.headers["accept-encoding"] || "gzip, br, deflate",
-          "user-agent": userAgent,
-          ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
-          ...(req.headers.referer ? { referer: req.headers.referer } : {}),
-          ...(req.headers["content-type"] ? { "content-type": req.headers["content-type"] } : {}),
-          ...(req.headers.range ? { range: req.headers.range } : {}),
-          ...(req.headers["if-none-match"] ? { "if-none-match": req.headers["if-none-match"] } : {}),
-          ...(req.headers["if-modified-since"] ? { "if-modified-since": req.headers["if-modified-since"] } : {}),
-        },
+        headers: buildUpstreamRequestHeaders(req, upstreamUrl, claims, token),
         body: requestBody,
       },
       method
@@ -511,7 +598,7 @@ async function handleGatewayRequest(req: Request, res: Response) {
       return res.status(upstream.status).end();
     }
 
-    copyResponseHeaders(upstream, res);
+    copyResponseHeaders(upstream, res, req, token);
     res.status(upstream.status);
 
     const contentType = upstream.headers.get("content-type") || "";
