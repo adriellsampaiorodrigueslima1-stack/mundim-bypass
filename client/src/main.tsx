@@ -1,3 +1,4 @@
+// client/src/main.tsx
 import { trpc } from "@/lib/trpc";
 import { COOKIE_NAME, UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -7,6 +8,20 @@ import superjson from "superjson";
 import App from "./App";
 import { startLogin } from "./const";
 import "./index.css";
+
+// 1. Ativação do Service Worker do Mundim Bypass
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js', { scope: '/' })
+      .then((reg) => {
+        console.log('[Mundim Bypass] Service Worker ativo:', reg.scope);
+      })
+      .catch((err) => {
+        console.error('[Mundim Bypass] Falha ao registrar Service Worker:', err);
+      });
+  });
+}
 
 const queryClient = new QueryClient();
 
@@ -43,10 +58,6 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       headers() {
-        // Preview auto-login fallback: when the browser blocks iframe cookies
-        // (Safari ITP / private browsing / WebView), the runtime mirrors the
-        // session into sessionStorage so we can forward it as a Bearer token.
-        // The regular OAuth cookie flow keeps working and takes priority server-side.
         try {
           const raw = sessionStorage.getItem("manus-cookie");
           if (raw) {
@@ -58,7 +69,7 @@ const trpcClient = trpc.createClient({
             }
           }
         } catch {
-          // sessionStorage unavailable
+          // sessionStorage indisponível
         }
         return {};
       },
